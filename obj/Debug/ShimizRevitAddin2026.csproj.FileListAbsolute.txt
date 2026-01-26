@@ -1,0 +1,6 @@
+C:\Users\73421\source\repos\ShimizRevitAddin2026\ShimizRevitAddin2026\obj\Debug\ShimizRevitAddin2026.csproj.AssemblyReference.cache
+C:\Users\73421\source\repos\ShimizRevitAddin2026\ShimizRevitAddin2026\obj\Debug\ShimizRevitAddin2026.csproj.CoreCompileInputs.cache
+C:\Users\73421\source\repos\ShimizRevitAddin2026\ShimizRevitAddin2026\bin\Debug\ShimizRevitAddin2026.dll
+C:\Users\73421\source\repos\ShimizRevitAddin2026\ShimizRevitAddin2026\bin\Debug\ShimizRevitAddin2026.pdb
+C:\Users\73421\source\repos\ShimizRevitAddin2026\ShimizRevitAddin2026\obj\Debug\ShimizRevitAddin2026.dll
+C:\Users\73421\source\repos\ShimizRevitAddin2026\ShimizRevitAddin2026\obj\Debug\ShimizRevitAddin2026.pdb
