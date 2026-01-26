@@ -13,7 +13,6 @@ namespace ShimizRevitAddin2026.Commands
     [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
     internal class HighlightRebarTagsInActiveViewCommand : IExternalCommand
     {
-        private const string StructureRebarTagName = "構造鉄筋タグ";
         private const string BendingDetailTagName = "曲げ加工詳細";
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
@@ -31,7 +30,7 @@ namespace ShimizRevitAddin2026.Commands
                     return Result.Cancelled;
                 }
 
-                var matcher = new RebarTagNameMatcher(StructureRebarTagName, BendingDetailTagName);
+                var matcher = new RebarTagNameMatcher(BendingDetailTagName);
                 var collector = new RebarDependentTagCollector(matcher);
                 var model = collector.Collect(doc, rebar, activeView);
 

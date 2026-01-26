@@ -2,39 +2,40 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using Autodesk.Revit.DB;
 
 namespace ShimizRevitAddin2026.Services
 {
     internal class RebarTagNameMatcher
     {
-        private readonly string _structureRebarTagName;
         private readonly string _bendingDetailName;
 
-        public RebarTagNameMatcher(string structureRebarTagName, string bendingDetailName)
+        public RebarTagNameMatcher(string bendingDetailName)
         {
-            _structureRebarTagName = structureRebarTagName ?? string.Empty;
             _bendingDetailName = bendingDetailName ?? string.Empty;
         }
 
-        public bool IsStructureRebarTag(Document doc, IndependentTag tag)
+        // アクティブビュー内の「構造鉄筋タグ」判定
+        public bool IsStructureRebarTag(Document doc, Element tagElement)
         {
-            return IsMatchAny(doc, tag, _structureRebarTagName);
+            return IsBuiltInCategory(tagElement, BuiltInCategory.OST_RebarTags);
         }
 
-        public bool IsBendingDetailTag(Document doc, IndependentTag tag)
+        // アクティブビュー内の「曲げ加工詳細」判定
+        public bool IsBendingDetailTag(Document doc, Element tagElement)
         {
-            return IsMatchAny(doc, tag, _bendingDetailName);
+            return IsMatchAny(doc, tagElement, _bendingDetailName);
         }
 
-        private bool IsMatchAny(Document doc, IndependentTag tag, string expectedName)
+        private bool IsMatchAny(Document doc, Element tagElement, string expectedName)
         {
-            if (string.IsNullOrWhiteSpace(expectedName) || tag == null)
+            if (string.IsNullOrWhiteSpace(expectedName) || tagElement == null)
             {
                 return false;
             }
 
-            var names = GetCandidateNames(doc, tag);
+            var names = GetCandidateNames(doc, tagElement);
             return names.Any(n => IsNameHit(n, expectedName));
         }
 
@@ -45,24 +46,31 @@ namespace ShimizRevitAddin2026.Services
                 return false;
             }
 
-            if (string.Equals(candidate, expectedName, StringComparison.Ordinal))
+            var c = Normalize(candidate);
+            var e = Normalize(expectedName);
+            if (string.IsNullOrWhiteSpace(c) || string.IsNullOrWhiteSpace(e))
+            {
+                return false;
+            }
+
+            if (string.Equals(c, e, StringComparison.Ordinal))
             {
                 return true;
             }
 
-            return candidate.IndexOf(expectedName, StringComparison.Ordinal) >= 0;
+            return c.IndexOf(e, StringComparison.Ordinal) >= 0;
         }
 
-        private IReadOnlyList<string> GetCandidateNames(Document doc, IndependentTag tag)
+        private IReadOnlyList<string> GetCandidateNames(Document doc, Element tagElement)
         {
             var result = new List<string>();
 
-            AddIfNotEmpty(result, GetElementName(tag));
+            AddIfNotEmpty(result, GetElementName(tagElement));
 
-            var typeName = GetTagTypeName(doc, tag);
+            var typeName = GetTypeName(doc, tagElement);
             AddIfNotEmpty(result, typeName);
 
-            var familyName = GetTagFamilyName(doc, tag);
+            var familyName = GetFamilyName(doc, tagElement);
             AddIfNotEmpty(result, familyName);
 
             return result;
@@ -81,11 +89,11 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private string GetTagTypeName(Document doc, IndependentTag tag)
+        private string GetTypeName(Document doc, Element tagElement)
         {
             try
             {
-                var type = doc?.GetElement(tag.GetTypeId()) as ElementType;
+                var type = doc?.GetElement(tagElement.GetTypeId()) as ElementType;
                 return type?.Name ?? string.Empty;
             }
             catch (Exception ex)
@@ -95,12 +103,62 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private string GetTagFamilyName(Document doc, IndependentTag tag)
+        private string GetFamilyName(Document doc, Element tagElement)
         {
             try
             {
-                var type = doc?.GetElement(tag.GetTypeId()) as ElementType;
+                var type = doc?.GetElement(tagElement.GetTypeId()) as ElementType;
                 return type?.FamilyName ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return string.Empty;
+            }
+        }
+
+        private bool IsBuiltInCategory(Element e, BuiltInCategory bic)
+        {
+            try
+            {
+                if (e?.Category?.Id == null)
+                {
+                    return false;
+                }
+
+                // Revit 2026: ElementId.Value を利用
+                return e.Category.Id.Value == (long)(int)bic;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return false;
+            }
+        }
+
+        private string Normalize(string s)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    return string.Empty;
+                }
+
+                // 全角/半角・互換文字を吸収して、空白も除去する
+                var normalized = s.Normalize(NormalizationForm.FormKC).Trim();
+                var sb = new StringBuilder(normalized.Length);
+                foreach (var ch in normalized)
+                {
+                    if (char.IsWhiteSpace(ch))
+                    {
+                        continue;
+                    }
+
+                    sb.Append(ch);
+                }
+
+                return sb.ToString();
             }
             catch (Exception ex)
             {

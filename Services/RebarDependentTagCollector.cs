@@ -23,16 +23,17 @@ namespace ShimizRevitAddin2026.Services
             if (rebar == null) throw new ArgumentNullException(nameof(rebar));
             if (activeView == null) throw new ArgumentNullException(nameof(activeView));
 
-            var dependentIds = GetDependentTagIds(rebar);
-            var tagsInActiveView = GetIndependentTagsInView(doc, dependentIds, activeView.Id);
-            return BuildResult(doc, rebar.Id, activeView.Id, tagsInActiveView);
+            // 鉄筋に関連付けられた注釈要素を取得して、アクティブビューに限定する
+            var dependentIds = GetDependentAnnotationIds(rebar);
+            var elementsInActiveView = GetAnnotationElementsInView(doc, dependentIds, activeView.Id);
+            return BuildResult(doc, rebar.Id, activeView.Id, elementsInActiveView);
         }
 
-        private IReadOnlyList<ElementId> GetDependentTagIds(Element element)
+        private IReadOnlyList<ElementId> GetDependentAnnotationIds(Element element)
         {
             try
             {
-                var filter = new ElementClassFilter(typeof(IndependentTag));
+                var filter = BuildDependentFilter();
                 return element.GetDependentElements(filter).ToList();
             }
             catch (Exception ex)
@@ -42,12 +43,24 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private IReadOnlyList<IndependentTag> GetIndependentTagsInView(
+        private ElementFilter BuildDependentFilter()
+        {
+            // IndependentTag と MultiReferenceAnnotation を対象にする
+            var filters = new List<ElementFilter>
+            {
+                new ElementClassFilter(typeof(IndependentTag)),
+                new ElementClassFilter(typeof(MultiReferenceAnnotation)),
+            };
+
+            return new LogicalOrFilter(filters);
+        }
+
+        private IReadOnlyList<Element> GetAnnotationElementsInView(
             Document doc,
             IReadOnlyList<ElementId> dependentIds,
             ElementId viewId)
         {
-            var result = new List<IndependentTag>();
+            var result = new List<Element>();
 
             if (dependentIds == null)
             {
@@ -56,48 +69,72 @@ namespace ShimizRevitAddin2026.Services
 
             foreach (var id in dependentIds)
             {
-                var tag = doc.GetElement(id) as IndependentTag;
-                if (tag == null)
+                var e = doc.GetElement(id);
+                if (e == null)
                 {
                     continue;
                 }
 
-                if (tag.OwnerViewId != viewId)
+                var (ok, ownerViewId) = TryGetOwnerViewId(e);
+                if (!ok || ownerViewId != viewId)
                 {
                     continue;
                 }
 
-                result.Add(tag);
+                result.Add(e);
             }
 
             return result;
+        }
+
+        private (bool ok, ElementId viewId) TryGetOwnerViewId(Element e)
+        {
+            try
+            {
+                if (e is IndependentTag tag)
+                {
+                    return (true, tag.OwnerViewId);
+                }
+
+                if (e is MultiReferenceAnnotation mra)
+                {
+                    return (true, mra.OwnerViewId);
+                }
+
+                return (false, ElementId.InvalidElementId);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, ElementId.InvalidElementId);
+            }
         }
 
         private RebarTag BuildResult(
             Document doc,
             ElementId rebarId,
             ElementId viewId,
-            IReadOnlyList<IndependentTag> tags)
+            IReadOnlyList<Element> tagElements)
         {
             var matched = new List<ElementId>();
             var structureTags = new List<ElementId>();
             var bendingDetailTags = new List<ElementId>();
 
-            if (tags != null)
+            if (tagElements != null)
             {
-                foreach (var tag in tags)
+                foreach (var e in tagElements)
                 {
-                    if (_nameMatcher != null && _nameMatcher.IsStructureRebarTag(doc, tag))
+                    if (_nameMatcher != null && _nameMatcher.IsStructureRebarTag(doc, e))
                     {
-                        structureTags.Add(tag.Id);
-                        matched.Add(tag.Id);
+                        structureTags.Add(e.Id);
+                        matched.Add(e.Id);
                         continue;
                     }
 
-                    if (_nameMatcher != null && _nameMatcher.IsBendingDetailTag(doc, tag))
+                    if (_nameMatcher != null && _nameMatcher.IsBendingDetailTag(doc, e))
                     {
-                        bendingDetailTags.Add(tag.Id);
-                        matched.Add(tag.Id);
+                        bendingDetailTags.Add(e.Id);
+                        matched.Add(e.Id);
                         continue;
                     }
                 }
