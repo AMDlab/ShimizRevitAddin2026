@@ -155,47 +155,55 @@ namespace ShimizRevitAddin2026.Services
             View view,
             IReadOnlyList<Element> bendingDetails)
         {
+            var stage = "Init";
             try
             {
+                stage = "CollectBendingDetailTagIds";
                 var tagIds = CollectBendingDetailTagIds(doc, rebar, view);
                 if (tagIds == null || tagIds.Count == 0)
                 {
-                    return CreateFail(ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, "曲げ加工詳細タグがありません。");
+                    return CreateFail(ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, "曲げ加工詳細タグがありません。"));
                 }
 
+                stage = "ResolveIndependentTags";
                 var tags = ResolveIndependentTags(doc, tagIds);
                 if (tags == null || tags.Count == 0)
                 {
-                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, "曲げ加工詳細タグ要素を取得できません。");
+                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, "曲げ加工詳細タグ要素を取得できません。"));
                 }
 
+                stage = "TrySelectFreeEndTagWithLastSegment";
                 var (freeTag, segStart0, segEnd0, selectReason) = TrySelectFreeEndTagWithLastSegment(tags);
                 if (freeTag == null)
                 {
-                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, selectReason);
+                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, selectReason));
                 }
 
+                stage = "TryResolveTaggedRebarId";
                 var (hasTaggedRebar, taggedRebarId) = TryResolveTaggedRebarId(doc, freeTag);
                 if (!hasTaggedRebar)
                 {
-                    return CreateFail(freeTag.Id, ElementId.InvalidElementId, null, "自由端タグに紐づく鉄筋を取得できません。");
+                    return CreateFail(freeTag.Id, ElementId.InvalidElementId, null, BuildStageMessage(stage, "自由端タグに紐づく鉄筋を取得できません。"));
                 }
 
                 var segStart = segStart0;
                 var segEnd = segEnd0;
 
+                stage = "TryBuildRayFromLastSegment";
                 var (hasRay, rayOrigin, rayDir, rayReason) = TryBuildRayFromLastSegment(segStart, segEnd);
                 if (!hasRay)
                 {
-                    return CreateFail(freeTag.Id, taggedRebarId, segEnd, rayReason);
+                    return CreateFail(freeTag.Id, taggedRebarId, segEnd, BuildStageMessage(stage, rayReason));
                 }
 
+                stage = "TryFindFirstIntersectionWithBendingDetail";
                 var (hasHit, hitDetail, hitPoint, hitReason) = TryFindFirstIntersectionWithBendingDetail(bendingDetails, view, rayOrigin, rayDir);
                 if (!hasHit || hitDetail == null)
                 {
-                    return CreateFail(freeTag.Id, taggedRebarId, segEnd, hitReason);
+                    return CreateFail(freeTag.Id, taggedRebarId, segEnd, BuildStageMessage(stage, hitReason));
                 }
 
+                stage = "TryResolveHostRebarIdFromBendingDetail";
                 var (hasHost, hostRebarId) = TryResolveHostRebarIdFromBendingDetail(doc, hitDetail);
                 if (!hasHost)
                 {
@@ -206,7 +214,7 @@ namespace ShimizRevitAddin2026.Services
                         hitDetail.Id,
                         ElementId.InvalidElementId,
                         false,
-                        "曲げ詳細から鉄筋を特定できません。");
+                        BuildStageMessage(stage, "曲げ詳細から鉄筋を特定できません。"));
                 }
 
                 if (hostRebarId == taggedRebarId)
@@ -230,11 +238,41 @@ namespace ShimizRevitAddin2026.Services
                     false,
                     $"不一致（曲げ詳細Host={hostRebarId.Value} / タグ対象鉄筋={taggedRebarId.Value}）。");
             }
+            catch (Autodesk.Revit.Exceptions.InternalException iex)
+            {
+                Debug.WriteLine(iex);
+                var rebarIdText = rebar?.Id == null ? string.Empty : rebar.Id.Value.ToString();
+                return CreateFail(
+                    rebar?.Id ?? ElementId.InvalidElementId,
+                    rebar?.Id ?? ElementId.InvalidElementId,
+                    null,
+                    $"{stage}: InternalException: {iex.Message} (RebarId={rebarIdText})");
+            }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return CreateFail(rebar?.Id ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, ex.Message);
+                return CreateFail(
+                    rebar?.Id ?? ElementId.InvalidElementId,
+                    rebar?.Id ?? ElementId.InvalidElementId,
+                    null,
+                    $"{stage}: {ex.GetType().Name}: {ex.Message}");
             }
+        }
+
+        private string BuildStageMessage(string stage, string reason)
+        {
+            if (string.IsNullOrWhiteSpace(stage))
+            {
+                return reason ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return stage;
+            }
+
+            // ステージ名を必ず残して原因を追えるようにする
+            return $"{stage}: {reason}";
         }
 
         private RebarTagLeaderBendingDetailCheckItem CreateFail(
@@ -438,7 +476,22 @@ namespace ShimizRevitAddin2026.Services
                     try
                     {
                         // 自由端タグのみを対象にする想定
-                        var end = tag.GetLeaderEnd(r);
+                        XYZ end = null;
+                        try
+                        {
+                            end = tag.GetLeaderEnd(r);
+                        }
+                        catch (Autodesk.Revit.Exceptions.InternalException iex)
+                        {
+                            errors.Add($"GetLeaderEnd: InternalException: {iex.Message}");
+                            continue;
+                        }
+                        catch (Exception ex)
+                        {
+                            errors.Add($"GetLeaderEnd: {ex.GetType().Name}: {ex.Message}");
+                            continue;
+                        }
+
                         if (end == null)
                         {
                             errors.Add("GetLeaderEnd が null を返しました。");
@@ -446,7 +499,21 @@ namespace ShimizRevitAddin2026.Services
                         }
 
                         var elbow = TryGetLeaderElbow(tag, r);
-                        var head = tag.TagHeadPosition;
+                        XYZ head = null;
+                        try
+                        {
+                            head = tag.TagHeadPosition;
+                        }
+                        catch (Autodesk.Revit.Exceptions.InternalException iex)
+                        {
+                            errors.Add($"TagHeadPosition: InternalException: {iex.Message}");
+                            continue;
+                        }
+                        catch (Exception ex)
+                        {
+                            errors.Add($"TagHeadPosition: {ex.GetType().Name}: {ex.Message}");
+                            continue;
+                        }
 
                         // 最後の線分: elbow->end、elbow無しなら head->end
                         var start = elbow ?? head;
@@ -456,6 +523,10 @@ namespace ShimizRevitAddin2026.Services
                         }
 
                         return (true, start, end, string.Empty);
+                    }
+                    catch (Autodesk.Revit.Exceptions.InternalException iex)
+                    {
+                        errors.Add($"InternalException: {iex.Message}");
                     }
                     catch (Exception ex)
                     {
@@ -574,10 +645,10 @@ namespace ShimizRevitAddin2026.Services
                     return (false, null, null, "曲げ詳細が見つかりません。");
                 }
 
-                var (hasBasis, right, up) = TryGetViewBasis(view);
+                var (hasBasis, right, up, basisReason) = TryGetViewBasis(view);
                 if (!hasBasis)
                 {
-                    return (false, null, null, "ビュー座標系を取得できません。");
+                    return (false, null, null, string.IsNullOrWhiteSpace(basisReason) ? "ビュー座標系を取得できません。" : basisReason);
                 }
 
                 if (rayOrigin == null || rayDir == null)
@@ -595,26 +666,62 @@ namespace ShimizRevitAddin2026.Services
                 Element best = null;
                 XYZ bestPoint = null;
                 var bestT = double.MaxValue;
+                var errors = new List<string>();
 
                 foreach (var e in bendingDetails)
                 {
-                    var (ok, t) = TryIntersectRayWithBoundingBox2D(e, uo, vo, du, dv, right, up);
-                    if (!ok)
+                    try
                     {
-                        continue;
-                    }
+                        var (ok, t, reason) = TryIntersectRayWithBoundingBox2D(e, uo, vo, du, dv, right, up);
+                        if (!ok)
+                        {
+                            if (!string.IsNullOrWhiteSpace(reason) && e != null)
+                            {
+                                errors.Add($"{e.Id.Value}: {reason}");
+                            }
+                            continue;
+                        }
 
-                    if (t < bestT)
+                        if (t < bestT)
+                        {
+                            bestT = t;
+                            best = e;
+                            bestPoint = rayOrigin + (rayDir * t);
+                        }
+                    }
+                    catch (Autodesk.Revit.Exceptions.InternalException iex)
                     {
-                        bestT = t;
-                        best = e;
-                        bestPoint = rayOrigin + (rayDir * t);
+                        if (e != null)
+                        {
+                            errors.Add($"{e.Id.Value}: InternalException: {iex.Message}");
+                        }
+                        else
+                        {
+                            errors.Add($"InternalException: {iex.Message}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (e != null)
+                        {
+                            errors.Add($"{e.Id.Value}: {ex.GetType().Name}: {ex.Message}");
+                        }
+                        else
+                        {
+                            errors.Add($"{ex.GetType().Name}: {ex.Message}");
+                        }
                     }
                 }
 
                 if (best == null)
                 {
-                    return (false, null, null, "引き出し線の延長と曲げ詳細の交点を取得できません。");
+                    if (errors.Count == 0)
+                    {
+                        return (false, null, null, "引き出し線の延長と曲げ詳細の交点を取得できません。");
+                    }
+
+                    var unique = errors.Distinct().Take(8).ToList();
+                    return (false, null, null, "曲げ詳細との交点取得で例外が発生しました。\n" + string.Join("\n", unique));
                 }
 
                 return (true, best, bestPoint, string.Empty);
@@ -622,17 +729,17 @@ namespace ShimizRevitAddin2026.Services
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
+                return (false, null, null, $"TryFindFirstIntersectionWithBendingDetail: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
-        private (bool ok, XYZ right, XYZ up) TryGetViewBasis(View view)
+        private (bool ok, XYZ right, XYZ up, string reason) TryGetViewBasis(View view)
         {
             try
             {
                 if (view == null)
                 {
-                    return (false, null, null);
+                    return (false, null, null, "View が null です。");
                 }
 
                 // View の向き（2D座標系）
@@ -640,15 +747,15 @@ namespace ShimizRevitAddin2026.Services
                 var up = view.UpDirection;
                 if (right == null || up == null)
                 {
-                    return (false, null, null);
+                    return (false, null, null, "RightDirection/UpDirection を取得できません。");
                 }
 
-                return (true, right, up);
+                return (true, right, up, string.Empty);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, null, null);
+                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -697,7 +804,7 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private (bool ok, double tEnter) TryIntersectRayWithBoundingBox2D(
+        private (bool ok, double tEnter, string reason) TryIntersectRayWithBoundingBox2D(
             Element element,
             double uo,
             double vo,
@@ -710,13 +817,13 @@ namespace ShimizRevitAddin2026.Services
             {
                 if (element == null)
                 {
-                    return (false, 0);
+                    return (false, 0, "Element が null です。");
                 }
 
                 var bb = element.get_BoundingBox(null);
                 if (bb == null || bb.Min == null || bb.Max == null)
                 {
-                    return (false, 0);
+                    return (false, 0, "BoundingBox を取得できません。");
                 }
 
                 // 8頂点をビュー座標に投影して2DのAABBを作る
@@ -742,26 +849,26 @@ namespace ShimizRevitAddin2026.Services
 
                 if (uMin > uMax || vMin > vMax)
                 {
-                    return (false, 0);
+                    return (false, 0, "2D BoundingBox を構築できません。");
                 }
 
                 var tmin = 0.0;
                 var tmax = double.MaxValue;
 
-                if (!UpdateSlab(uo, du, uMin, uMax, ref tmin, ref tmax)) return (false, 0);
-                if (!UpdateSlab(vo, dv, vMin, vMax, ref tmin, ref tmax)) return (false, 0);
+                if (!UpdateSlab(uo, du, uMin, uMax, ref tmin, ref tmax)) return (false, 0, string.Empty);
+                if (!UpdateSlab(vo, dv, vMin, vMax, ref tmin, ref tmax)) return (false, 0, string.Empty);
 
                 if (tmax < 0)
                 {
-                    return (false, 0);
+                    return (false, 0, string.Empty);
                 }
 
-                return (true, tmin);
+                return (true, tmin, string.Empty);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, 0);
+                return (false, 0, $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
