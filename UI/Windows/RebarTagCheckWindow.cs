@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
@@ -225,6 +227,7 @@ namespace ShimizRevitAddin2026.UI.Windows
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch
             };
+            _rebarListBox.ItemContainerStyle = BuildRebarListItemStyle();
             ScrollViewer.SetVerticalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Disabled);
             _rebarListBox.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Rebars)));
@@ -235,6 +238,26 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             card.Content = grid;
             return card;
+        }
+
+        private Style BuildRebarListItemStyle()
+        {
+            // 不一致がある鉄筋を視覚的に強調する
+            var style = new Style(typeof(ListBoxItem));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Black));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.Normal));
+
+            var mismatchTrigger = new DataTrigger
+            {
+                Binding = new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsLeaderMismatch)),
+                Value = true
+            };
+            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Red));
+            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
+            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 238))));
+
+            style.Triggers.Add(mismatchTrigger);
+            return style;
         }
 
         private UIElement CreateResultCard()

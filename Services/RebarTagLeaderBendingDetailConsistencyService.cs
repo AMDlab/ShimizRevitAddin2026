@@ -23,8 +23,63 @@ namespace ShimizRevitAddin2026.Services
             if (rebar == null) throw new ArgumentNullException(nameof(rebar));
             if (view == null) throw new ArgumentNullException(nameof(view));
 
-            var tagIds = CollectBendingDetailTagIds(doc, rebar, view);
             var bendingDetails = CollectBendingDetailElementsInView(doc, view);
+            return CheckInternal(doc, rebar, view, bendingDetails);
+        }
+
+        public IReadOnlyCollection<ElementId> CollectMismatchRebarIds(Document doc, IReadOnlyList<Rebar> rebars, View view)
+        {
+            if (doc == null) throw new ArgumentNullException(nameof(doc));
+            if (view == null) throw new ArgumentNullException(nameof(view));
+            if (rebars == null || rebars.Count == 0) return new List<ElementId>();
+
+            var bendingDetails = CollectBendingDetailElementsInView(doc, view);
+            return CollectMismatchRebarIdsInternal(doc, rebars, view, bendingDetails);
+        }
+
+        private IReadOnlyCollection<ElementId> CollectMismatchRebarIdsInternal(
+            Document doc,
+            IReadOnlyList<Rebar> rebars,
+            View view,
+            IReadOnlyList<Element> bendingDetails)
+        {
+            var result = new HashSet<ElementId>();
+
+            foreach (var rebar in rebars)
+            {
+                if (rebar == null)
+                {
+                    continue;
+                }
+
+                var items = CheckInternal(doc, rebar, view, bendingDetails);
+                if (HasAnyMismatch(items))
+                {
+                    result.Add(rebar.Id);
+                }
+            }
+
+            return result.ToList();
+        }
+
+        private bool HasAnyMismatch(IReadOnlyList<RebarTagLeaderBendingDetailCheckItem> items)
+        {
+            if (items == null || items.Count == 0)
+            {
+                return false;
+            }
+
+            // 不一致、または判定不能も NG とみなす
+            return items.Any(x => x != null && !x.IsMatch);
+        }
+
+        private IReadOnlyList<RebarTagLeaderBendingDetailCheckItem> CheckInternal(
+            Document doc,
+            Rebar rebar,
+            View view,
+            IReadOnlyList<Element> bendingDetails)
+        {
+            var tagIds = CollectBendingDetailTagIds(doc, rebar, view);
             return BuildResults(doc, tagIds, bendingDetails);
         }
 
