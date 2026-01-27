@@ -85,7 +85,7 @@ namespace ShimizRevitAddin2026.Services
             return item == null ? new List<RebarTagLeaderBendingDetailCheckItem>() : new List<RebarTagLeaderBendingDetailCheckItem> { item };
         }
 
-        private IReadOnlyList<ElementId> CollectBendingDetailTagIds(Document doc, Rebar rebar, View view)
+        private IReadOnlyList<ElementId> CollectStructureRebarTagIds(Document doc, Rebar rebar, View view)
         {
             try
             {
@@ -95,7 +95,7 @@ namespace ShimizRevitAddin2026.Services
                 }
 
                 var model = _dependentTagCollector.Collect(doc, rebar, view);
-                return model?.BendingDetailTagIds?.ToList() ?? new List<ElementId>();
+                return model?.StructureTagIds?.ToList() ?? new List<ElementId>();
             }
             catch (Exception ex)
             {
@@ -158,22 +158,22 @@ namespace ShimizRevitAddin2026.Services
             var stage = "Init";
             try
             {
-                stage = "CollectBendingDetailTagIds";
-                var tagIds = CollectBendingDetailTagIds(doc, rebar, view);
+                stage = "CollectStructureRebarTagIds";
+                var tagIds = CollectStructureRebarTagIds(doc, rebar, view);
                 if (tagIds == null || tagIds.Count == 0)
                 {
-                    return CreateFail(ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, "曲げ加工詳細タグがありません。"));
+                    return CreateFail(ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, "構造鉄筋タグがありません。"));
                 }
 
                 stage = "ResolveIndependentTags";
                 var tags = ResolveIndependentTags(doc, tagIds);
                 if (tags == null || tags.Count == 0)
                 {
-                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, "曲げ加工詳細タグ要素を取得できません。"));
+                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, "構造鉄筋タグ要素を取得できません。"));
                 }
 
-                stage = "TrySelectFreeEndTagWithLastSegment";
-                var (freeTag, segStart0, segEnd0, selectReason) = TrySelectFreeEndTagWithLastSegment(tags);
+                stage = "TrySelectFreeEndTagWithLeaderPoints";
+                var (freeTag, segStart0, segEnd0, selectReason) = TrySelectFreeEndTagWithLeaderPoints(tags, view);
                 if (freeTag == null)
                 {
                     return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, BuildStageMessage(stage, selectReason));
@@ -275,6 +275,30 @@ namespace ShimizRevitAddin2026.Services
             return $"{stage}: {reason}";
         }
 
+        private string SafeElementIdText(Element e)
+        {
+            try
+            {
+                if (e == null)
+                {
+                    return "?";
+                }
+
+                var id = e.Id;
+                if (id == null || id == ElementId.InvalidElementId)
+                {
+                    return "?";
+                }
+
+                return id.Value.ToString();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return "?";
+            }
+        }
+
         private RebarTagLeaderBendingDetailCheckItem CreateFail(
             ElementId tagId,
             ElementId taggedRebarId,
@@ -363,7 +387,9 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private (IndependentTag tag, XYZ segStart, XYZ segEnd, string reason) TrySelectFreeEndTagWithLastSegment(IReadOnlyList<IndependentTag> tags)
+        private (IndependentTag tag, XYZ start, XYZ end, string reason) TrySelectFreeEndTagWithLeaderPoints(
+            IReadOnlyList<IndependentTag> tags,
+            View view)
         {
             try
             {
@@ -382,26 +408,32 @@ namespace ShimizRevitAddin2026.Services
                         continue;
                     }
 
-                    if (!tag.HasLeader)
+                    try
                     {
-                        reasons.Add($"{tag.Id.Value}: HasLeader=false");
-                        continue;
-                    }
+                        var tagIdText = SafeElementIdText(tag);
+                        var (ok, s, e, r) = TryGetLeaderLinePoints(tag, view);
+                        if (ok)
+                        {
+                            return (tag, s, e, string.Empty);
+                        }
 
-                    var (ok, s, e, r) = TryGetLeaderLastSegment(tag);
-                    if (ok)
-                    {
-                        return (tag, s, e, string.Empty);
+                        var cond = TryGetLeaderEndConditionText(tag);
+                        if (string.IsNullOrWhiteSpace(cond))
+                        {
+                            reasons.Add($"{tagIdText}: {r}");
+                        }
+                        else
+                        {
+                            reasons.Add($"{tagIdText}: LeaderEndCondition={cond} / {r}");
+                        }
                     }
-
-                    var cond = TryGetLeaderEndConditionText(tag);
-                    if (string.IsNullOrWhiteSpace(cond))
+                    catch (Autodesk.Revit.Exceptions.InternalException iex)
                     {
-                        reasons.Add($"{tag.Id.Value}: {r}");
+                        reasons.Add($"{SafeElementIdText(tag)}: InternalException: {iex.Message}");
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        reasons.Add($"{tag.Id.Value}: LeaderEndCondition={cond} / {r}");
+                        reasons.Add($"{SafeElementIdText(tag)}: {ex.GetType().Name}: {ex.Message}");
                     }
                 }
 
@@ -416,6 +448,125 @@ namespace ShimizRevitAddin2026.Services
             {
                 Debug.WriteLine(ex);
                 return (null, null, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private (bool ok, XYZ start, XYZ end, string reason) TryGetLeaderLinePoints(IndependentTag tag, View view)
+        {
+            try
+            {
+                if (tag == null)
+                {
+                    return (false, null, null, "タグが null です。");
+                }
+
+                // HasLeader を参照すると InternalException になるケースがあるので使わず、
+                // GetLeaderEnd/GetLeaderElbow が取れるかで判断する。
+                var (refs, refReason) = TryGetTaggedReferencesWithReason(tag);
+                if (refs.Count == 0)
+                {
+                    return (false, null, null, string.IsNullOrWhiteSpace(refReason) ? "タグ参照を取得できません。" : refReason);
+                }
+
+                var errors = new List<string>();
+                foreach (var r in refs)
+                {
+                    if (r == null)
+                    {
+                        continue;
+                    }
+
+                    XYZ end;
+                    try
+                    {
+                        end = tag.GetLeaderEnd(r);
+                    }
+                    catch (Autodesk.Revit.Exceptions.InternalException iex)
+                    {
+                        errors.Add($"GetLeaderEnd: InternalException: {iex.Message}");
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"GetLeaderEnd: {ex.GetType().Name}: {ex.Message}");
+                        continue;
+                    }
+
+                    if (end == null)
+                    {
+                        errors.Add("GetLeaderEnd が null を返しました。");
+                        continue;
+                    }
+
+                    // 拐点が取れれば拐点->終点、取れなければ起点->終点
+                    var elbow = TryGetLeaderElbow(tag, r);
+                    var start = elbow ?? TryGetTagHeadOrFallback(tag, view);
+                    if (start == null)
+                    {
+                        errors.Add("始点を取得できません。");
+                        continue;
+                    }
+
+                    return (true, start, end, string.Empty);
+                }
+
+                if (errors.Count == 0)
+                {
+                    return (false, null, null, "GetLeaderEnd に失敗しました。");
+                }
+
+                return (false, null, null, string.Join(" / ", errors.Distinct().ToList()));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private XYZ TryGetTagHeadOrFallback(IndependentTag tag, View view)
+        {
+            try
+            {
+                if (tag == null)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    return tag.TagHeadPosition;
+                }
+                catch (Autodesk.Revit.Exceptions.InternalException)
+                {
+                    // フォールバックへ
+                }
+                catch (Exception)
+                {
+                    // フォールバックへ
+                }
+
+                // TagHeadPosition が取れない場合は、ビューのBoundingBox中心を起点として使う
+                try
+                {
+                    var bb = tag.get_BoundingBox(view);
+                    if (bb == null || bb.Min == null || bb.Max == null)
+                    {
+                        return null;
+                    }
+
+                    return (bb.Min + bb.Max) * 0.5;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(ex);
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return null;
             }
         }
 
@@ -454,15 +605,10 @@ namespace ShimizRevitAddin2026.Services
                     return (false, null, null, "タグが null です。");
                 }
 
-                if (!tag.HasLeader)
-                {
-                    return (false, null, null, "HasLeader=false");
-                }
-
-                var refs = TryGetTaggedReferences(tag);
+                var (refs, refReason) = TryGetTaggedReferencesWithReason(tag);
                 if (refs.Count == 0)
                 {
-                    return (false, null, null, "タグ参照を取得できません。");
+                    return (false, null, null, string.IsNullOrWhiteSpace(refReason) ? "タグ参照を取得できません。" : $"タグ参照を取得できません。{refReason}");
                 }
 
                 var errors = new List<string>();
@@ -549,34 +695,49 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private IReadOnlyList<Reference> TryGetTaggedReferences(IndependentTag tag)
+        private (IReadOnlyList<Reference> refs, string reason) TryGetTaggedReferencesWithReason(IndependentTag tag)
         {
             try
             {
                 if (tag == null)
                 {
-                    return new List<Reference>();
+                    return (new List<Reference>(), "タグが null です。");
                 }
 
                 // API バージョン差を吸収するため、まずは GetTaggedReferences() を反射で取得する
                 var m = tag.GetType().GetMethod("GetTaggedReferences", Type.EmptyTypes);
                 if (m == null)
                 {
-                    return new List<Reference>();
+                    return (new List<Reference>(), "GetTaggedReferences メソッドが見つかりません。");
                 }
 
-                var obj = m.Invoke(tag, null);
+                object obj;
+                try
+                {
+                    obj = m.Invoke(tag, null);
+                }
+                catch (System.Reflection.TargetInvocationException tex)
+                {
+                    var inner = tex.InnerException;
+                    if (inner is Autodesk.Revit.Exceptions.InternalException iex)
+                    {
+                        return (new List<Reference>(), $"GetTaggedReferences: InternalException: {iex.Message}");
+                    }
+
+                    return (new List<Reference>(), $"GetTaggedReferences: {inner?.GetType().Name ?? tex.GetType().Name}: {inner?.Message ?? tex.Message}");
+                }
+
                 if (obj is IEnumerable<Reference> refs)
                 {
-                    return refs.Where(x => x != null).ToList();
+                    return (refs.Where(x => x != null).ToList(), string.Empty);
                 }
 
-                return new List<Reference>();
+                return (new List<Reference>(), "GetTaggedReferences の戻り値が想定外です。");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return new List<Reference>();
+                return (new List<Reference>(), $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
