@@ -76,21 +76,38 @@ namespace ShimizRevitAddin2026.Commands
         {
             if (rebar == null) return string.Empty;
 
-            var mark = GetMark(rebar);
-            if (string.IsNullOrWhiteSpace(mark))
+            var typeName = GetTypeName(rebar);
+            if (string.IsNullOrWhiteSpace(typeName))
             {
                 return $"ID: {rebar.Id.Value}";
             }
 
-            return $"ID: {rebar.Id.Value} / Mark: {mark}";
+            return $"{typeName} / ID: {rebar.Id.Value}";
         }
 
-        private string GetMark(Rebar rebar)
+        private string GetTypeName(Rebar rebar)
         {
             try
             {
-                var p = rebar.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
-                return p == null ? string.Empty : p.AsString();
+                if (rebar == null)
+                {
+                    return string.Empty;
+                }
+
+                var doc = rebar.Document;
+                if (doc == null)
+                {
+                    return string.Empty;
+                }
+
+                var typeId = rebar.GetTypeId();
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                {
+                    return string.Empty;
+                }
+
+                var type = doc.GetElement(typeId) as ElementType;
+                return type == null ? string.Empty : (type.Name ?? string.Empty);
             }
             catch (Exception ex)
             {
