@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
+using ShimizRevitAddin2026.ExternalEvents;
 using ShimizRevitAddin2026.Services;
 using ShimizRevitAddin2026.UI.Models;
 using ShimizRevitAddin2026.UI.ViewModels;
@@ -19,7 +20,7 @@ namespace ShimizRevitAddin2026.UI.Windows
     {
         private readonly UIDocument _uidoc;
         private readonly View _targetView;
-        private readonly RebarTagHighlighter _highlighter;
+        private readonly RebarTagHighlightExternalEventService _externalEventService;
         private readonly RebarTagCheckViewModel _vm;
 
         private ListBox _rebarListBox;
@@ -28,12 +29,12 @@ namespace ShimizRevitAddin2026.UI.Windows
         public RebarTagCheckWindow(
             UIDocument uidoc,
             View targetView,
-            RebarTagHighlighter highlighter,
+            RebarTagHighlightExternalEventService externalEventService,
             IReadOnlyList<RebarListItem> rebars)
         {
             _uidoc = uidoc;
             _targetView = targetView;
-            _highlighter = highlighter;
+            _externalEventService = externalEventService;
 
             _vm = new RebarTagCheckViewModel();
             _vm.SetTargetView(targetView);
@@ -249,9 +250,7 @@ namespace ShimizRevitAddin2026.UI.Windows
                     return;
                 }
 
-                var model = _highlighter.Highlight(_uidoc, rebar, _targetView);
-                var (structure, bending) = BuildTagContents(model);
-                _vm.UpdateRows(structure, bending);
+                RequestHighlight(rebar.Id);
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
             {
@@ -275,68 +274,32 @@ namespace ShimizRevitAddin2026.UI.Windows
             return e as Rebar;
         }
 
-        private (IReadOnlyList<string> structure, IReadOnlyList<string> bending) BuildTagContents(ShimizRevitAddin2026.Model.RebarTag model)
+        private void RequestHighlight(ElementId rebarId)
         {
-            if (model == null)
+            if (_externalEventService == null || _targetView == null)
             {
-                return (new List<string>(), new List<string>());
+                return;
             }
 
-            var structure = BuildTagContentList(model.StructureTagIds);
-            var bending = BuildTagContentList(model.BendingDetailTagIds);
-            return (structure, bending);
+            var viewId = _targetView.Id;
+            _externalEventService.Request(rebarId, viewId, OnHighlightCompleted);
         }
 
-        private IReadOnlyList<string> BuildTagContentList(IReadOnlyList<ElementId> ids)
+        private void OnHighlightCompleted(RebarTagCheckResult result)
         {
-            if (_uidoc == null || _uidoc.Document == null)
-            {
-                return new List<string>();
-            }
-
-            if (ids == null)
-            {
-                return new List<string>();
-            }
-
-            return ids
-                .Select(BuildTagContent)
-                .Where(x => x != null)
-                .ToList();
-        }
-
-        private string BuildTagContent(ElementId id)
-        {
-            if (id == null || _uidoc == null || _uidoc.Document == null)
-            {
-                return string.Empty;
-            }
-
             try
             {
-                var e = _uidoc.Document.GetElement(id);
-                if (e is IndependentTag tag)
+                Dispatcher.Invoke(() =>
                 {
-                    return NormalizeContent(tag.TagText, id);
-                }
-
-                return id.Value.ToString();
+                    var structure = result?.Structure ?? new List<string>();
+                    var bending = result?.Bending ?? new List<string>();
+                    _vm.UpdateRows(structure, bending);
+                });
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return id.Value.ToString();
             }
-        }
-
-        private string NormalizeContent(string content, ElementId id)
-        {
-            if (!string.IsNullOrWhiteSpace(content))
-            {
-                return content;
-            }
-
-            return id == null ? string.Empty : id.Value.ToString();
         }
     }
 }

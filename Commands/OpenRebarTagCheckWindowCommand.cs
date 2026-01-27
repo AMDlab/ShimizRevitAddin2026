@@ -6,6 +6,7 @@ using System.Windows.Interop;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
+using ShimizRevitAddin2026.ExternalEvents;
 using ShimizRevitAddin2026.Services;
 using ShimizRevitAddin2026.UI.Models;
 using ShimizRevitAddin2026.UI.Windows;
@@ -16,11 +17,17 @@ namespace ShimizRevitAddin2026.Commands
     internal class OpenRebarTagCheckWindowCommand : IExternalCommand
     {
         private const string BendingDetailTagName = "曲げ加工詳細";
+        private static readonly RebarTagCheckWindowStore _windowStore = new RebarTagCheckWindowStore();
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             try
             {
+                if (_windowStore.TryActivateExisting())
+                {
+                    return Result.Succeeded;
+                }
+
                 var uiapp = commandData.Application;
                 var uidoc = uiapp.ActiveUIDocument;
                 var doc = uidoc.Document;
@@ -30,10 +37,12 @@ namespace ShimizRevitAddin2026.Commands
                 var items = BuildRebarItems(rebars);
 
                 var highlighter = BuildHighlighter();
-                var window = new RebarTagCheckWindow(uidoc, activeView, highlighter, items);
+                var externalEventService = new RebarTagHighlightExternalEventService(highlighter);
+                var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items);
                 SetOwner(uiapp, window);
 
-                window.ShowDialog();
+                _windowStore.SetCurrent(window);
+                window.Show();
                 return Result.Succeeded;
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
