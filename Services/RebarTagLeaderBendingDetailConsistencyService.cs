@@ -11,6 +11,7 @@ namespace ShimizRevitAddin2026.Services
     internal class RebarTagLeaderBendingDetailConsistencyService
     {
         private readonly RebarDependentTagCollector _dependentTagCollector;
+        private const double Eps = 1e-9;
 
         public RebarTagLeaderBendingDetailConsistencyService(RebarDependentTagCollector dependentTagCollector)
         {
@@ -24,7 +25,8 @@ namespace ShimizRevitAddin2026.Services
             if (view == null) throw new ArgumentNullException(nameof(view));
 
             var bendingDetails = CollectBendingDetailElementsInView(doc, view);
-            return CheckInternal(doc, rebar, view, bendingDetails);
+            var item = BuildResultForRebar(doc, rebar, view, bendingDetails);
+            return item == null ? new List<RebarTagLeaderBendingDetailCheckItem>() : new List<RebarTagLeaderBendingDetailCheckItem> { item };
         }
 
         public IReadOnlyCollection<ElementId> CollectMismatchRebarIds(Document doc, IReadOnlyList<Rebar> rebars, View view)
@@ -79,8 +81,8 @@ namespace ShimizRevitAddin2026.Services
             View view,
             IReadOnlyList<Element> bendingDetails)
         {
-            var tagIds = CollectBendingDetailTagIds(doc, rebar, view);
-            return BuildResults(doc, tagIds, bendingDetails);
+            var item = BuildResultForRebar(doc, rebar, view, bendingDetails);
+            return item == null ? new List<RebarTagLeaderBendingDetailCheckItem>() : new List<RebarTagLeaderBendingDetailCheckItem> { item };
         }
 
         private IReadOnlyList<ElementId> CollectBendingDetailTagIds(Document doc, Rebar rebar, View view)
@@ -147,65 +149,52 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private IReadOnlyList<RebarTagLeaderBendingDetailCheckItem> BuildResults(
+        private RebarTagLeaderBendingDetailCheckItem BuildResultForRebar(
             Document doc,
-            IReadOnlyList<ElementId> tagIds,
-            IReadOnlyList<Element> bendingDetails)
-        {
-            var results = new List<RebarTagLeaderBendingDetailCheckItem>();
-            if (tagIds == null || tagIds.Count == 0)
-            {
-                return results;
-            }
-
-            foreach (var tagId in tagIds)
-            {
-                var item = BuildResultForTag(doc, tagId, bendingDetails);
-                results.Add(item);
-            }
-
-            return results;
-        }
-
-        private RebarTagLeaderBendingDetailCheckItem BuildResultForTag(
-            Document doc,
-            ElementId tagId,
+            Rebar rebar,
+            View view,
             IReadOnlyList<Element> bendingDetails)
         {
             try
             {
-                var tag = doc.GetElement(tagId) as IndependentTag;
-                if (tag == null)
+                var tagIds = CollectBendingDetailTagIds(doc, rebar, view);
+                var tags = ResolveIndependentTags(doc, tagIds);
+                var (freeTag, segStart0, segEnd0) = TrySelectFreeEndTagWithLastSegment(tags);
+                if (freeTag == null)
                 {
-                    return CreateFail(tagId, ElementId.InvalidElementId, null, "タグが見つかりません。");
+                    // 自由端タグが無ければ判定しない（NGにしない）
+                    return null;
                 }
 
-                var (hasTaggedRebar, taggedRebarId) = TryResolveTaggedRebarId(doc, tag);
+                var (hasTaggedRebar, taggedRebarId) = TryResolveTaggedRebarId(doc, freeTag);
                 if (!hasTaggedRebar)
                 {
-                    return CreateFail(tagId, taggedRebarId, null, "タグに紐づく鉄筋を取得できません。");
+                    return CreateFail(freeTag.Id, ElementId.InvalidElementId, null, "自由端タグに紐づく鉄筋を取得できません。");
                 }
 
-                var (hasLeaderEnd, leaderEnd) = TryGetLeaderEnd(tag);
-                if (!hasLeaderEnd)
+                var segStart = segStart0;
+                var segEnd = segEnd0;
+
+                var (hasRay, rayOrigin, rayDir, rayReason) = TryBuildRayFromLastSegment(segStart, segEnd);
+                if (!hasRay)
                 {
-                    return CreateFail(tagId, taggedRebarId, leaderEnd, "LeaderEnd を取得できません（リーダー無し、または無効）。");
+                    return CreateFail(freeTag.Id, taggedRebarId, segEnd, rayReason);
                 }
 
-                var (hasNearest, nearest, dist) = TryFindNearestBendingDetail(bendingDetails, leaderEnd);
-                if (!hasNearest || nearest == null)
+                var (hasHit, hitDetail, hitPoint, hitReason) = TryFindFirstIntersectionWithBendingDetail(bendingDetails, view, rayOrigin, rayDir);
+                if (!hasHit || hitDetail == null)
                 {
-                    return CreateFail(tagId, taggedRebarId, leaderEnd, "矢印が指す曲げ詳細を特定できません。");
+                    return CreateFail(freeTag.Id, taggedRebarId, segEnd, hitReason);
                 }
 
-                var (hasHost, hostRebarId) = TryResolveHostRebarIdFromBendingDetail(doc, nearest);
+                var (hasHost, hostRebarId) = TryResolveHostRebarIdFromBendingDetail(doc, hitDetail);
                 if (!hasHost)
                 {
                     return new RebarTagLeaderBendingDetailCheckItem(
-                        tagId,
+                        freeTag.Id,
                         taggedRebarId,
-                        leaderEnd,
-                        nearest.Id,
+                        hitPoint,
+                        hitDetail.Id,
                         ElementId.InvalidElementId,
                         false,
                         "曲げ詳細から鉄筋を特定できません。");
@@ -214,28 +203,28 @@ namespace ShimizRevitAddin2026.Services
                 if (hostRebarId == taggedRebarId)
                 {
                     return new RebarTagLeaderBendingDetailCheckItem(
-                        tagId,
+                        freeTag.Id,
                         taggedRebarId,
-                        leaderEnd,
-                        nearest.Id,
+                        hitPoint,
+                        hitDetail.Id,
                         hostRebarId,
                         true,
-                        $"一致（距離={FormatLength(doc, dist)}）。");
+                        "一致。");
                 }
 
                 return new RebarTagLeaderBendingDetailCheckItem(
-                    tagId,
+                    freeTag.Id,
                     taggedRebarId,
-                    leaderEnd,
-                    nearest.Id,
+                    hitPoint,
+                    hitDetail.Id,
                     hostRebarId,
                     false,
-                    $"不一致（距離={FormatLength(doc, dist)}）。");
+                    $"不一致（曲げ詳細Host={hostRebarId.Value} / タグ対象鉄筋={taggedRebarId.Value}）。");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return CreateFail(tagId, ElementId.InvalidElementId, null, ex.Message);
+                return CreateFail(rebar?.Id ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, ex.Message);
             }
         }
 
@@ -264,26 +253,26 @@ namespace ShimizRevitAddin2026.Services
                     return (false, ElementId.InvalidElementId);
                 }
 
-                // 複数参照タグの場合もあるので、最初の要素を採用する（必要なら後で拡張）
                 var ids = tag.GetTaggedLocalElementIds();
                 if (ids == null || ids.Count == 0)
                 {
                     return (false, ElementId.InvalidElementId);
                 }
 
-                var id = ids.FirstOrDefault();
-                if (id == null || id == ElementId.InvalidElementId)
+                foreach (var id in ids)
                 {
-                    return (false, ElementId.InvalidElementId);
+                    if (id == null || id == ElementId.InvalidElementId)
+                    {
+                        continue;
+                    }
+
+                    if (doc.GetElement(id) is Rebar)
+                    {
+                        return (true, id);
+                    }
                 }
 
-                var e = doc.GetElement(id);
-                if (e is Rebar)
-                {
-                    return (true, id);
-                }
-
-                return (false, id);
+                return (false, ElementId.InvalidElementId);
             }
             catch (Exception ex)
             {
@@ -292,159 +281,486 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private (bool ok, XYZ leaderEnd) TryGetLeaderEnd(IndependentTag tag)
+        private IReadOnlyList<IndependentTag> ResolveIndependentTags(Document doc, IReadOnlyList<ElementId> tagIds)
         {
             try
             {
-                if (tag == null)
+                if (doc == null || tagIds == null || tagIds.Count == 0)
                 {
-                    return (false, null);
+                    return new List<IndependentTag>();
                 }
 
-                if (!tag.HasLeader)
+                var result = new List<IndependentTag>();
+                foreach (var id in tagIds)
                 {
-                    return (false, null);
+                    if (id == null || id == ElementId.InvalidElementId)
+                    {
+                        continue;
+                    }
+
+                    var e = doc.GetElement(id) as IndependentTag;
+                    if (e == null)
+                    {
+                        continue;
+                    }
+
+                    result.Add(e);
                 }
 
-                var (hasRef, taggedRef) = TryGetFirstTaggedReference(tag);
-                if (!hasRef || taggedRef == null)
-                {
-                    return (false, null);
-                }
-
-                // Revit 2026: LeaderEnd はプロパティではなく GetLeaderEnd(Reference)
-                var end = tag.GetLeaderEnd(taggedRef);
-                return (end != null, end);
+                return result;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, null);
+                return new List<IndependentTag>();
             }
         }
 
-        private (bool ok, Reference reference) TryGetFirstTaggedReference(IndependentTag tag)
+        private (IndependentTag tag, XYZ segStart, XYZ segEnd) TrySelectFreeEndTagWithLastSegment(IReadOnlyList<IndependentTag> tags)
+        {
+            try
+            {
+                if (tags == null || tags.Count == 0)
+                {
+                    return (null, null, null);
+                }
+
+                foreach (var tag in tags)
+                {
+                    if (tag == null)
+                    {
+                        continue;
+                    }
+
+                    if (!tag.HasLeader)
+                    {
+                        continue;
+                    }
+
+                    var (ok, s, e, _) = TryGetLeaderLastSegment(tag);
+                    if (ok)
+                    {
+                        return (tag, s, e);
+                    }
+                }
+
+                return (null, null, null);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (null, null, null);
+            }
+        }
+
+        private (bool ok, XYZ start, XYZ end, string reason) TryGetLeaderLastSegment(IndependentTag tag)
         {
             try
             {
                 if (tag == null)
                 {
-                    return (false, null);
+                    return (false, null, null, "タグが null です。");
+                }
+
+                if (!tag.HasLeader)
+                {
+                    return (false, null, null, "HasLeader=false");
+                }
+
+                var refs = TryGetTaggedReferences(tag);
+                if (refs.Count == 0)
+                {
+                    return (false, null, null, "タグ参照を取得できません。");
+                }
+
+                var errors = new List<string>();
+                foreach (var r in refs)
+                {
+                    if (r == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        // 自由端タグのみを対象にする想定
+                        var end = tag.GetLeaderEnd(r);
+                        if (end == null)
+                        {
+                            errors.Add("GetLeaderEnd が null を返しました。");
+                            continue;
+                        }
+
+                        var elbow = TryGetLeaderElbow(tag, r);
+                        var head = tag.TagHeadPosition;
+
+                        // 最後の線分: elbow->end、elbow無しなら head->end
+                        var start = elbow ?? head;
+                        if (start == null)
+                        {
+                            return (false, null, null, "始点を取得できません。");
+                        }
+
+                        return (true, start, end, string.Empty);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"{ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+
+                if (errors.Count == 0)
+                {
+                    return (false, null, null, "GetLeaderEnd に失敗しました。");
+                }
+
+                var unique = errors.Distinct().ToList();
+                return (false, null, null, string.Join(" / ", unique));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private IReadOnlyList<Reference> TryGetTaggedReferences(IndependentTag tag)
+        {
+            try
+            {
+                if (tag == null)
+                {
+                    return new List<Reference>();
                 }
 
                 // API バージョン差を吸収するため、まずは GetTaggedReferences() を反射で取得する
                 var m = tag.GetType().GetMethod("GetTaggedReferences", Type.EmptyTypes);
                 if (m == null)
                 {
-                    return (false, null);
+                    return new List<Reference>();
                 }
 
                 var obj = m.Invoke(tag, null);
                 if (obj is IEnumerable<Reference> refs)
                 {
-                    var first = refs.FirstOrDefault();
-                    return (first != null, first);
+                    return refs.Where(x => x != null).ToList();
                 }
 
-                if (obj is IList<Reference> list)
-                {
-                    var first = list.FirstOrDefault();
-                    return (first != null, first);
-                }
-
-                return (false, null);
+                return new List<Reference>();
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, null);
+                return new List<Reference>();
             }
         }
 
-        private (bool ok, Element element, double distance) TryFindNearestBendingDetail(
-            IReadOnlyList<Element> bendingDetails,
-            XYZ leaderEnd)
+        private XYZ TryGetLeaderElbow(IndependentTag tag, Reference r)
         {
             try
             {
-                if (bendingDetails == null || bendingDetails.Count == 0 || leaderEnd == null)
+                if (tag == null || r == null)
                 {
-                    return (false, null, double.MaxValue);
+                    return null;
                 }
 
-                // リーダー端点付近の曲げ詳細を最近傍で決める（半径は 50mm）
-                var radius = UnitUtils.ConvertToInternalUnits(50, UnitTypeId.Millimeters);
+                // GetLeaderElbow(Reference) はバージョン差があるため反射で呼ぶ
+                var m = tag.GetType().GetMethod("GetLeaderElbow", new[] { typeof(Reference) });
+                if (m == null)
+                {
+                    return null;
+                }
+
+                var obj = m.Invoke(tag, new object[] { r });
+                return obj as XYZ;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return null;
+            }
+        }
+
+        private (bool ok, XYZ origin, XYZ dir, string reason) TryBuildRayFromLastSegment(XYZ start, XYZ end)
+        {
+            try
+            {
+                if (start == null || end == null)
+                {
+                    return (false, null, null, "線分が無効です。");
+                }
+
+                var v = end - start;
+                var len = v.GetLength();
+                if (len < Eps)
+                {
+                    return (false, null, null, "線分の長さが 0 です。");
+                }
+
+                // 最後の線分を延長: end を起点に同方向へ
+                return (true, end, v / len, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private (bool ok, Element bendingDetail, XYZ hitPoint, string reason) TryFindFirstIntersectionWithBendingDetail(
+            IReadOnlyList<Element> bendingDetails,
+            View view,
+            XYZ rayOrigin,
+            XYZ rayDir)
+        {
+            try
+            {
+                if (bendingDetails == null || bendingDetails.Count == 0)
+                {
+                    return (false, null, null, "曲げ詳細が見つかりません。");
+                }
+
+                var (hasBasis, right, up) = TryGetViewBasis(view);
+                if (!hasBasis)
+                {
+                    return (false, null, null, "ビュー座標系を取得できません。");
+                }
+
+                if (rayOrigin == null || rayDir == null)
+                {
+                    return (false, null, null, "レイが無効です。");
+                }
+
+                var (okO, uo, vo) = TryProjectToUv(rayOrigin, right, up);
+                var (okD, du, dv) = TryProjectDirToUv(rayDir, right, up);
+                if (!okO || !okD)
+                {
+                    return (false, null, null, "レイの投影に失敗しました。");
+                }
+
                 Element best = null;
-                var bestDist = double.MaxValue;
+                XYZ bestPoint = null;
+                var bestT = double.MaxValue;
 
                 foreach (var e in bendingDetails)
                 {
-                    var (ok, dist) = TryDistanceToBoundingBox(e, leaderEnd);
+                    var (ok, t) = TryIntersectRayWithBoundingBox2D(e, uo, vo, du, dv, right, up);
                     if (!ok)
                     {
                         continue;
                     }
 
-                    if (dist < bestDist)
+                    if (t < bestT)
                     {
-                        bestDist = dist;
+                        bestT = t;
                         best = e;
+                        bestPoint = rayOrigin + (rayDir * t);
                     }
                 }
 
-                if (best == null || bestDist > radius)
+                if (best == null)
                 {
-                    return (false, null, bestDist);
+                    return (false, null, null, "引き出し線の延長と曲げ詳細の交点を取得できません。");
                 }
 
-                return (true, best, bestDist);
+                return (true, best, bestPoint, string.Empty);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, null, double.MaxValue);
+                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
-        private (bool ok, double distance) TryDistanceToBoundingBox(Element element, XYZ point)
+        private (bool ok, XYZ right, XYZ up) TryGetViewBasis(View view)
         {
             try
             {
-                if (element == null || point == null)
+                if (view == null)
                 {
-                    return (false, double.MaxValue);
+                    return (false, null, null);
+                }
+
+                // View の向き（2D座標系）
+                var right = view.RightDirection;
+                var up = view.UpDirection;
+                if (right == null || up == null)
+                {
+                    return (false, null, null);
+                }
+
+                return (true, right, up);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, null);
+            }
+        }
+
+        private (bool ok, double u, double v) TryProjectToUv(XYZ p, XYZ right, XYZ up)
+        {
+            try
+            {
+                if (p == null || right == null || up == null)
+                {
+                    return (false, 0, 0);
+                }
+
+                var u = p.DotProduct(right);
+                var v = p.DotProduct(up);
+                return (true, u, v);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, 0, 0);
+            }
+        }
+
+        private (bool ok, double du, double dv) TryProjectDirToUv(XYZ d, XYZ right, XYZ up)
+        {
+            try
+            {
+                if (d == null || right == null || up == null)
+                {
+                    return (false, 0, 0);
+                }
+
+                var du = d.DotProduct(right);
+                var dv = d.DotProduct(up);
+                if (Math.Abs(du) < Eps && Math.Abs(dv) < Eps)
+                {
+                    return (false, 0, 0);
+                }
+
+                return (true, du, dv);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, 0, 0);
+            }
+        }
+
+        private (bool ok, double tEnter) TryIntersectRayWithBoundingBox2D(
+            Element element,
+            double uo,
+            double vo,
+            double du,
+            double dv,
+            XYZ right,
+            XYZ up)
+        {
+            try
+            {
+                if (element == null)
+                {
+                    return (false, 0);
                 }
 
                 var bb = element.get_BoundingBox(null);
                 if (bb == null || bb.Min == null || bb.Max == null)
                 {
-                    return (false, double.MaxValue);
+                    return (false, 0);
                 }
 
-                var closest = ClampPointToBox(point, bb.Min, bb.Max);
-                return (true, closest.DistanceTo(point));
+                // 8頂点をビュー座標に投影して2DのAABBを作る
+                var corners = BuildBoundingBoxCorners(bb.Min, bb.Max);
+                var uMin = double.MaxValue;
+                var uMax = double.MinValue;
+                var vMin = double.MaxValue;
+                var vMax = double.MinValue;
+
+                foreach (var c in corners)
+                {
+                    var (ok, u, v) = TryProjectToUv(c, right, up);
+                    if (!ok)
+                    {
+                        continue;
+                    }
+
+                    if (u < uMin) uMin = u;
+                    if (u > uMax) uMax = u;
+                    if (v < vMin) vMin = v;
+                    if (v > vMax) vMax = v;
+                }
+
+                if (uMin > uMax || vMin > vMax)
+                {
+                    return (false, 0);
+                }
+
+                var tmin = 0.0;
+                var tmax = double.MaxValue;
+
+                if (!UpdateSlab(uo, du, uMin, uMax, ref tmin, ref tmax)) return (false, 0);
+                if (!UpdateSlab(vo, dv, vMin, vMax, ref tmin, ref tmax)) return (false, 0);
+
+                if (tmax < 0)
+                {
+                    return (false, 0);
+                }
+
+                return (true, tmin);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, double.MaxValue);
+                return (false, 0);
             }
         }
 
-        private XYZ ClampPointToBox(XYZ p, XYZ min, XYZ max)
+        private IReadOnlyList<XYZ> BuildBoundingBoxCorners(XYZ min, XYZ max)
         {
-            // ボックス外の点でも最近傍点を求める
-            var x = Clamp(p.X, min.X, max.X);
-            var y = Clamp(p.Y, min.Y, max.Y);
-            var z = Clamp(p.Z, min.Z, max.Z);
-            return new XYZ(x, y, z);
+            var result = new List<XYZ>();
+            if (min == null || max == null)
+            {
+                return result;
+            }
+
+            var xs = new[] { min.X, max.X };
+            var ys = new[] { min.Y, max.Y };
+            var zs = new[] { min.Z, max.Z };
+
+            foreach (var x in xs)
+            {
+                foreach (var y in ys)
+                {
+                    foreach (var z in zs)
+                    {
+                        result.Add(new XYZ(x, y, z));
+                    }
+                }
+            }
+
+            return result;
         }
 
-        private double Clamp(double v, double min, double max)
+        private bool UpdateSlab(double o, double d, double min, double max, ref double tmin, ref double tmax)
         {
-            if (v < min) return min;
-            if (v > max) return max;
-            return v;
+            if (Math.Abs(d) < Eps)
+            {
+                if (o < min || o > max)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            var t1 = (min - o) / d;
+            var t2 = (max - o) / d;
+            if (t1 > t2)
+            {
+                var tmp = t1;
+                t1 = t2;
+                t2 = tmp;
+            }
+
+            if (t1 > tmin) tmin = t1;
+            if (t2 < tmax) tmax = t2;
+            return tmin <= tmax;
         }
 
         private (bool ok, ElementId rebarId) TryResolveHostRebarIdFromBendingDetail(Document doc, Element bendingDetail)
@@ -578,23 +894,7 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private string FormatLength(Document doc, double internalLength)
-        {
-            try
-            {
-                if (doc == null)
-                {
-                    return internalLength.ToString("0.###");
-                }
-
-                return UnitFormatUtils.Format(doc.GetUnits(), SpecTypeId.Length, internalLength, false);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex);
-                return internalLength.ToString("0.###");
-            }
-        }
+        // 旧ロジック（最近傍検索・距離表示）は削除済み
     }
 }
 

@@ -301,7 +301,7 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             var label = new System.Windows.Controls.TextBlock
             {
-                Text = "NG理由",
+                Text = "メッセージボックス",
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 6)

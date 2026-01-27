@@ -94,11 +94,11 @@ namespace ShimizRevitAddin2026.ExternalEvents
 
             var structure = BuildTagContentList(doc, model.StructureTagIds);
             var bending = BuildTagContentList(doc, model.BendingDetailTagIds);
-            var ngReason = BuildNgReasonText(doc, rebar, view);
-            return new RebarTagCheckResult(structure, bending, ngReason);
+            var message = BuildMessageText(doc, rebar, view);
+            return new RebarTagCheckResult(structure, bending, message);
         }
 
-        private string BuildNgReasonText(Document doc, Rebar rebar, View view)
+        private string BuildMessageText(Document doc, Rebar rebar, View view)
         {
             try
             {
@@ -108,7 +108,7 @@ namespace ShimizRevitAddin2026.ExternalEvents
                 }
 
                 var items = _consistencyService.Check(doc, rebar, view);
-                return FormatNgReason(items);
+                return FormatMessage(items);
             }
             catch (Exception ex)
             {
@@ -117,29 +117,49 @@ namespace ShimizRevitAddin2026.ExternalEvents
             }
         }
 
-        private string FormatNgReason(IReadOnlyList<ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem> items)
+        private string FormatMessage(IReadOnlyList<ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem> items)
         {
             if (items == null || items.Count == 0)
             {
-                return string.Empty;
+                return "自由端タグが見つかりません。";
             }
 
-            var ngItems = items.Where(x => x != null && !x.IsMatch).ToList();
-            if (ngItems.Count == 0)
+            // 現状は1件（自由端タグの判定結果）を返す
+            var item = items.FirstOrDefault(x => x != null);
+            if (item == null)
             {
-                return string.Empty;
+                return "自由端タグが見つかりません。";
             }
 
-            // 1行=1タグの判定結果を表示する
             var lines = new List<string>();
-            foreach (var x in ngItems)
+            lines.Add(BuildPointedBendingDetailLine(item));
+
+            if (!item.IsMatch)
             {
-                var tagIdText = x.TagId == null ? string.Empty : x.TagId.Value.ToString();
-                var msg = x.Message ?? string.Empty;
-                lines.Add($"{tagIdText}: {msg}");
+                // NG の場合のみ詳細メッセージを表示する
+                var msg = item.Message ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(msg))
+                {
+                    lines.Add(msg);
+                }
             }
 
             return string.Join(Environment.NewLine, lines);
+        }
+
+        private string BuildPointedBendingDetailLine(ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem item)
+        {
+            if (item == null)
+            {
+                return "曲げ詳細ID: （未取得）";
+            }
+
+            if (item.PointedBendingDetailId == null || item.PointedBendingDetailId == ElementId.InvalidElementId)
+            {
+                return "曲げ詳細ID: （未取得）";
+            }
+
+            return $"曲げ詳細ID: {item.PointedBendingDetailId.Value}";
         }
 
         private IReadOnlyList<string> BuildTagContentList(Document doc, IReadOnlyList<ElementId> ids)
