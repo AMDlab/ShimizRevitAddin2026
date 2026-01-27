@@ -16,7 +16,7 @@ using Wpf.Ui.Markup;
 
 namespace ShimizRevitAddin2026.UI.Windows
 {
-    internal class RebarTagCheckWindow : FluentWindow
+    internal class RebarTagCheckWindow : System.Windows.Window
     {
         private readonly UIDocument _uidoc;
         private readonly View _targetView;
@@ -52,6 +52,10 @@ namespace ShimizRevitAddin2026.UI.Windows
             Width = 1100;
             Height = 650;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+            // 通常のウィンドウ枠を使用して、移動・最小化・閉じるを有効化する
+            WindowStyle = WindowStyle.SingleBorderWindow;
+            ResizeMode = ResizeMode.CanResize;
         }
 
         private void ApplyWpfUiResources()
