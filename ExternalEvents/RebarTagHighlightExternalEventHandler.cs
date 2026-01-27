@@ -121,27 +121,24 @@ namespace ShimizRevitAddin2026.ExternalEvents
         {
             if (items == null || items.Count == 0)
             {
-                return "自由端タグが見つかりません。";
+                return "曲げ詳細ID: （未取得）\n判定結果を取得できません。";
             }
 
             // 現状は1件（自由端タグの判定結果）を返す
             var item = items.FirstOrDefault(x => x != null);
             if (item == null)
             {
-                return "自由端タグが見つかりません。";
+                return "曲げ詳細ID: （未取得）\n判定結果を取得できません。";
             }
 
             var lines = new List<string>();
             lines.Add(BuildPointedBendingDetailLine(item));
 
-            if (!item.IsMatch)
+            // OK/NG に関係なく詳細メッセージを表示する（空なら省略）
+            var msg = item.Message ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(msg))
             {
-                // NG の場合のみ詳細メッセージを表示する
-                var msg = item.Message ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(msg))
-                {
-                    lines.Add(msg);
-                }
+                lines.Add(msg);
             }
 
             return string.Join(Environment.NewLine, lines);

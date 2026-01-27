@@ -158,12 +158,21 @@ namespace ShimizRevitAddin2026.Services
             try
             {
                 var tagIds = CollectBendingDetailTagIds(doc, rebar, view);
+                if (tagIds == null || tagIds.Count == 0)
+                {
+                    return CreateFail(ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, "曲げ加工詳細タグがありません。");
+                }
+
                 var tags = ResolveIndependentTags(doc, tagIds);
-                var (freeTag, segStart0, segEnd0) = TrySelectFreeEndTagWithLastSegment(tags);
+                if (tags == null || tags.Count == 0)
+                {
+                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, "曲げ加工詳細タグ要素を取得できません。");
+                }
+
+                var (freeTag, segStart0, segEnd0, selectReason) = TrySelectFreeEndTagWithLastSegment(tags);
                 if (freeTag == null)
                 {
-                    // 自由端タグが無ければ判定しない（NGにしない）
-                    return null;
+                    return CreateFail(tagIds.FirstOrDefault() ?? ElementId.InvalidElementId, rebar?.Id ?? ElementId.InvalidElementId, null, selectReason);
                 }
 
                 var (hasTaggedRebar, taggedRebarId) = TryResolveTaggedRebarId(doc, freeTag);
@@ -316,14 +325,17 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private (IndependentTag tag, XYZ segStart, XYZ segEnd) TrySelectFreeEndTagWithLastSegment(IReadOnlyList<IndependentTag> tags)
+        private (IndependentTag tag, XYZ segStart, XYZ segEnd, string reason) TrySelectFreeEndTagWithLastSegment(IReadOnlyList<IndependentTag> tags)
         {
             try
             {
                 if (tags == null || tags.Count == 0)
                 {
-                    return (null, null, null);
+                    return (null, null, null, "曲げ加工詳細タグがありません。");
                 }
+
+                // 取得失敗の理由を集約して、後でメッセージに出す
+                var reasons = new List<string>();
 
                 foreach (var tag in tags)
                 {
@@ -334,22 +346,64 @@ namespace ShimizRevitAddin2026.Services
 
                     if (!tag.HasLeader)
                     {
+                        reasons.Add($"{tag.Id.Value}: HasLeader=false");
                         continue;
                     }
 
-                    var (ok, s, e, _) = TryGetLeaderLastSegment(tag);
+                    var (ok, s, e, r) = TryGetLeaderLastSegment(tag);
                     if (ok)
                     {
-                        return (tag, s, e);
+                        return (tag, s, e, string.Empty);
+                    }
+
+                    var cond = TryGetLeaderEndConditionText(tag);
+                    if (string.IsNullOrWhiteSpace(cond))
+                    {
+                        reasons.Add($"{tag.Id.Value}: {r}");
+                    }
+                    else
+                    {
+                        reasons.Add($"{tag.Id.Value}: LeaderEndCondition={cond} / {r}");
                     }
                 }
 
-                return (null, null, null);
+                if (reasons.Count == 0)
+                {
+                    return (null, null, null, "自由端タグの候補がありません。");
+                }
+
+                return (null, null, null, "自由端タグの線分を取得できません。\n" + string.Join("\n", reasons));
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (null, null, null);
+                return (null, null, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private string TryGetLeaderEndConditionText(IndependentTag tag)
+        {
+            try
+            {
+                if (tag == null)
+                {
+                    return string.Empty;
+                }
+
+                // 引出線タイプ（自由な端点など）を表示するため反射で取得する
+                var p = tag.GetType().GetProperty("LeaderEndCondition");
+                if (p == null)
+                {
+                    return string.Empty;
+                }
+
+                var v = p.GetValue(tag, null);
+                return v == null ? string.Empty : v.ToString();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return string.Empty;
             }
         }
 
