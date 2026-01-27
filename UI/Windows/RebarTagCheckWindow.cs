@@ -30,7 +30,8 @@ namespace ShimizRevitAddin2026.UI.Windows
             UIDocument uidoc,
             View targetView,
             RebarTagHighlightExternalEventService externalEventService,
-            IReadOnlyList<RebarListItem> rebars)
+            IReadOnlyList<RebarListItem> rebars,
+            int rebarCount)
         {
             _uidoc = uidoc;
             _targetView = targetView;
@@ -39,6 +40,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             _vm = new RebarTagCheckViewModel();
             _vm.SetTargetView(targetView);
             _vm.SetRebars(rebars);
+            _vm.SetRebarCount(rebarCount);
 
             DataContext = _vm;
             InitializeWindow();
@@ -118,8 +120,9 @@ namespace ShimizRevitAddin2026.UI.Windows
 
         private UIElement CreateHeader()
         {
-            var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(16, 12, 16, 8) };
+            var root = new StackPanel { Margin = new Thickness(16, 12, 16, 8) };
 
+            var panel = new DockPanel { LastChildFill = true };
             var label = new System.Windows.Controls.TextBlock
             {
                 Text = "対象View：",
@@ -140,8 +143,32 @@ namespace ShimizRevitAddin2026.UI.Windows
             panel.Children.Add(label);
             panel.Children.Add(value);
 
-            System.Windows.Controls.Grid.SetRow(panel, 0);
-            return panel;
+            root.Children.Add(panel);
+
+            var countPanel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 0) };
+            var countLabel = new System.Windows.Controls.TextBlock
+            {
+                Text = "鉄筋数：",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            DockPanel.SetDock(countLabel, Dock.Left);
+
+            var countValue = new System.Windows.Controls.TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold
+            };
+            countValue.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.RebarCountText)));
+
+            countPanel.Children.Add(countLabel);
+            countPanel.Children.Add(countValue);
+            root.Children.Add(countPanel);
+
+            System.Windows.Controls.Grid.SetRow(root, 0);
+            return root;
         }
 
         private UIElement CreateBody()

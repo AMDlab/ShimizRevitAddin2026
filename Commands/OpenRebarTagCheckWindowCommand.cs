@@ -35,10 +35,11 @@ namespace ShimizRevitAddin2026.Commands
 
                 var rebars = CollectRebars(doc, activeView);
                 var items = BuildRebarItems(rebars);
+                var rebarCount = GetRebarCount(rebars);
 
                 var highlighter = BuildHighlighter();
                 var externalEventService = new RebarTagHighlightExternalEventService(highlighter);
-                var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items);
+                var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items, rebarCount);
                 SetOwner(uiapp, window);
 
                 _windowStore.SetCurrent(window);
@@ -70,6 +71,11 @@ namespace ShimizRevitAddin2026.Commands
             return rebars
                 .Select(r => new RebarListItem(r.Id, BuildDisplayText(r)))
                 .ToList();
+        }
+
+        private int GetRebarCount(IReadOnlyList<Rebar> rebars)
+        {
+            return rebars == null ? 0 : rebars.Count;
         }
 
         private string BuildDisplayText(Rebar rebar)

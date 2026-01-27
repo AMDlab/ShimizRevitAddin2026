@@ -26,9 +26,27 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             }
         }
 
+        private string _rebarCountText = string.Empty;
+        public string RebarCountText
+        {
+            get => _rebarCountText;
+            private set
+            {
+                if (_rebarCountText == value) return;
+                _rebarCountText = value ?? string.Empty;
+                OnPropertyChanged();
+            }
+        }
+
         public void SetTargetView(View view)
         {
             TargetViewText = view == null ? string.Empty : view.Name;
+        }
+
+        public void SetRebarCount(int count)
+        {
+            if (count < 0) count = 0;
+            RebarCountText = count.ToString();
         }
 
         public void SetRebars(IEnumerable<RebarListItem> items)
