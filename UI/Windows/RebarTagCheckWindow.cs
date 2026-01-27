@@ -163,50 +163,78 @@ namespace ShimizRevitAddin2026.UI.Windows
             return grid;
         }
 
+        private Card CreateCard()
+        {
+            return new Card
+            {
+                Padding = new Thickness(12),
+                VerticalAlignment = VerticalAlignment.Stretch,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                SnapsToDevicePixels = true
+            };
+        }
+
         private UIElement CreateRebarListCard()
         {
-            var card = new Card { Padding = new Thickness(12) };
-            var stack = new StackPanel();
+            var card = CreateCard();
 
-            stack.Children.Add(new System.Windows.Controls.TextBlock
+            var grid = new System.Windows.Controls.Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var title = new System.Windows.Controls.TextBlock
             {
                 Text = "鉄筋List",
                 FontSize = 16,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 8)
-            });
+            };
+            System.Windows.Controls.Grid.SetRow(title, 0);
+            grid.Children.Add(title);
 
             _rebarListBox = new ListBox
             {
                 MinHeight = 400,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch
             };
+            ScrollViewer.SetVerticalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Auto);
+            ScrollViewer.SetHorizontalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Disabled);
             _rebarListBox.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Rebars)));
             _rebarListBox.SelectionChanged += OnRebarSelectionChanged;
 
-            stack.Children.Add(_rebarListBox);
-            card.Content = stack;
+            System.Windows.Controls.Grid.SetRow(_rebarListBox, 1);
+            grid.Children.Add(_rebarListBox);
+
+            card.Content = grid;
             return card;
         }
 
         private UIElement CreateResultCard()
         {
-            var card = new Card { Padding = new Thickness(12) };
-            var stack = new StackPanel();
+            var card = CreateCard();
 
-            stack.Children.Add(new System.Windows.Controls.TextBlock
+            var grid = new System.Windows.Controls.Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var title = new System.Windows.Controls.TextBlock
             {
                 Text = "検証結果",
                 FontSize = 16,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 8)
-            });
+            };
+            System.Windows.Controls.Grid.SetRow(title, 0);
+            grid.Children.Add(title);
 
             _resultGrid = CreateResultGrid();
             _resultGrid.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Rows)));
 
-            stack.Children.Add(_resultGrid);
-            card.Content = stack;
+            System.Windows.Controls.Grid.SetRow(_resultGrid, 1);
+            grid.Children.Add(_resultGrid);
+
+            card.Content = grid;
             return card;
         }
 
