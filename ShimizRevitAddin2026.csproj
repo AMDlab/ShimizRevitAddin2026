@@ -72,10 +72,12 @@
     <Compile Include="ExternalEvents\RebarTagHighlightExternalEventHandler.cs" />
     <Compile Include="ExternalEvents\RebarTagHighlightExternalEventService.cs" />
     <Compile Include="Model\RebarTag.cs" />
+    <Compile Include="Model\RebarTagLeaderBendingDetailCheckItem.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Selection\RebarSelectionFilter.cs" />
     <Compile Include="Services\RebarCollectorInView.cs" />
     <Compile Include="Services\RebarDependentTagCollector.cs" />
+    <Compile Include="Services\RebarTagLeaderBendingDetailConsistencyService.cs" />
     <Compile Include="Services\RebarTagHighlighter.cs" />
     <Compile Include="Services\RebarTagNameMatcher.cs" />
     <Compile Include="UI\Models\RebarListItem.cs" />
