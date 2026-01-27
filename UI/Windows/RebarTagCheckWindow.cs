@@ -267,6 +267,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             var grid = new System.Windows.Controls.Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var title = new System.Windows.Controls.TextBlock
             {
@@ -284,8 +285,43 @@ namespace ShimizRevitAddin2026.UI.Windows
             System.Windows.Controls.Grid.SetRow(_resultGrid, 1);
             grid.Children.Add(_resultGrid);
 
+            var ngPanel = CreateNgReasonPanel();
+            System.Windows.Controls.Grid.SetRow(ngPanel, 2);
+            grid.Children.Add(ngPanel);
+
             card.Content = grid;
             return card;
+        }
+
+        private UIElement CreateNgReasonPanel()
+        {
+            var panel = new System.Windows.Controls.Grid { Margin = new Thickness(0, 12, 0, 0) };
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(140) });
+
+            var label = new System.Windows.Controls.TextBlock
+            {
+                Text = "NG理由",
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            System.Windows.Controls.Grid.SetRow(label, 0);
+            panel.Children.Add(label);
+
+            var box = new System.Windows.Controls.TextBox
+            {
+                IsReadOnly = true,
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            box.SetBinding(System.Windows.Controls.TextBox.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.NgReasonText)));
+            System.Windows.Controls.Grid.SetRow(box, 1);
+            panel.Children.Add(box);
+
+            return panel;
         }
 
         private System.Windows.Controls.DataGrid CreateResultGrid()
@@ -376,6 +412,7 @@ namespace ShimizRevitAddin2026.UI.Windows
                     var structure = result?.Structure ?? new List<string>();
                     var bending = result?.Bending ?? new List<string>();
                     _vm.UpdateRows(structure, bending);
+                    _vm.UpdateNgReason(result?.NgReason ?? string.Empty);
                 });
             }
             catch (Exception ex)

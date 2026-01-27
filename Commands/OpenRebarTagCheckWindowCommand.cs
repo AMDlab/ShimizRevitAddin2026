@@ -40,7 +40,8 @@ namespace ShimizRevitAddin2026.Commands
                 var rebarCount = GetRebarCount(rebars);
 
                 var highlighter = BuildHighlighter(dependentTagCollector);
-                var externalEventService = new RebarTagHighlightExternalEventService(highlighter);
+                var consistencyService = new RebarTagLeaderBendingDetailConsistencyService(dependentTagCollector);
+                var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
                 var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items, rebarCount);
                 SetOwner(uiapp, window);
 

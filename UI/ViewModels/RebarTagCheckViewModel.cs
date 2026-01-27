@@ -14,6 +14,18 @@ namespace ShimizRevitAddin2026.UI.ViewModels
         public ObservableCollection<RebarListItem> Rebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarTagPairRow> Rows { get; } = new ObservableCollection<RebarTagPairRow>();
 
+        private string _ngReasonText = string.Empty;
+        public string NgReasonText
+        {
+            get => _ngReasonText;
+            private set
+            {
+                if (_ngReasonText == value) return;
+                _ngReasonText = value ?? string.Empty;
+                OnPropertyChanged();
+            }
+        }
+
         private string _targetViewText = string.Empty;
         public string TargetViewText
         {
@@ -82,6 +94,11 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             {
                 Rows.Add(row);
             }
+        }
+
+        public void UpdateNgReason(string text)
+        {
+            NgReasonText = text ?? string.Empty;
         }
 
         private void ClearRows()

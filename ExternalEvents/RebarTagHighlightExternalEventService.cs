@@ -12,9 +12,11 @@ namespace ShimizRevitAddin2026.ExternalEvents
         private readonly RebarTagHighlightExternalEventHandler _handler;
         private readonly ExternalEvent _externalEvent;
 
-        public RebarTagHighlightExternalEventService(RebarTagHighlighter highlighter)
+        public RebarTagHighlightExternalEventService(
+            RebarTagHighlighter highlighter,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService)
         {
-            _handler = new RebarTagHighlightExternalEventHandler(highlighter);
+            _handler = new RebarTagHighlightExternalEventHandler(highlighter, consistencyService);
             _externalEvent = ExternalEvent.Create(_handler);
         }
 
@@ -30,7 +32,7 @@ namespace ShimizRevitAddin2026.ExternalEvents
                 Debug.WriteLine(ex);
                 try
                 {
-                    onCompleted?.Invoke(new RebarTagCheckResult(null, null));
+                    onCompleted?.Invoke(new RebarTagCheckResult(null, null, string.Empty));
                 }
                 catch (Exception callbackEx)
                 {
