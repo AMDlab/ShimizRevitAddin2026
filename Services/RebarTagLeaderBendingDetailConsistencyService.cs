@@ -109,18 +109,64 @@ namespace ShimizRevitAddin2026.Services
             try
             {
                 // 曲げ詳細はビュー専用要素として配置されるため、ビュー内の要素を走査する
-                var collector = new FilteredElementCollector(doc, view.Id)
-                    .WhereElementIsNotElementType();
-
+                var collector = BuildBendingDetailCollector(doc, view);
                 var all = collector.ToElements();
-                return all
-                    .Where(IsBendingDetailElement)
-                    .ToList();
+
+                return all.Where(IsBendingDetailElement).ToList();
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
                 return new List<Element>();
+            }
+        }
+
+        private FilteredElementCollector BuildBendingDetailCollector(Document doc, View view)
+        {
+            try
+            {
+                var collector = new FilteredElementCollector(doc, view.Id);
+
+                var (hasBic, bic) = TryGetBendingDetailBuiltInCategory();
+                if (hasBic)
+                {
+                    collector = collector.OfCategory(bic);
+                }
+
+                return collector.WhereElementIsNotElementType();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new FilteredElementCollector(doc, view.Id).WhereElementIsNotElementType();
+            }
+        }
+
+        private (bool ok, BuiltInCategory bic) TryGetBendingDetailBuiltInCategory()
+        {
+            try
+            {
+                // バージョン差異を吸収するため、文字列から列挙を解決する
+                var candidates = new[]
+                {
+                    "OST_RebarBendingDetails",
+                    "OST_RebarBendingDetail",
+                };
+
+                foreach (var name in candidates)
+                {
+                    if (Enum.TryParse(name, true, out BuiltInCategory bic))
+                    {
+                        return (true, bic);
+                    }
+                }
+
+                return (false, default(BuiltInCategory));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, default(BuiltInCategory));
             }
         }
 
@@ -133,9 +179,20 @@ namespace ShimizRevitAddin2026.Services
                     return false;
                 }
 
-                // Revit API の型名に依存するが、コンパイル時の参照を避けつつ特定する
-                var typeName = e.GetType().Name ?? string.Empty;
-                if (typeName.IndexOf("RebarBendingDetail", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (IsBendingDetailCategory(e.Category))
+                {
+                    return true;
+                }
+
+                var (hasTypeHit, _) = TryMatchBendingDetailTypeElement(e);
+                if (hasTypeHit)
+                {
+                    return true;
+                }
+
+                // Revit API の型名に依存するが、参照を増やさないための最後の手段
+                var runtimeTypeName = e.GetType().Name ?? string.Empty;
+                if (runtimeTypeName.IndexOf("RebarBendingDetail", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return true;
                 }
@@ -146,6 +203,85 @@ namespace ShimizRevitAddin2026.Services
             {
                 Debug.WriteLine(ex);
                 return false;
+            }
+        }
+
+        private bool IsBendingDetailCategory(Category category)
+        {
+            try
+            {
+                if (category == null)
+                {
+                    return false;
+                }
+
+                var (hasBic, bic) = TryGetBendingDetailBuiltInCategory();
+                if (hasBic && category.Id != null && category.Id.Value == (int)bic)
+                {
+                    return true;
+                }
+
+                // ローカライズ差異があるため、名前判定は弱いヒューリスティックとして扱う
+                var name = category.Name ?? string.Empty;
+                if (name.IndexOf("Bending", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    name.IndexOf("Detail", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+
+                if (name.IndexOf("曲げ", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return false;
+            }
+        }
+
+        private (bool ok, Element typeElement) TryMatchBendingDetailTypeElement(Element e)
+        {
+            try
+            {
+                if (e == null)
+                {
+                    return (false, null);
+                }
+
+                var doc = e.Document;
+                if (doc == null)
+                {
+                    return (false, null);
+                }
+
+                var typeId = e.GetTypeId();
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                {
+                    return (false, null);
+                }
+
+                var typeElement = doc.GetElement(typeId);
+                if (typeElement == null)
+                {
+                    return (false, null);
+                }
+
+                var typeName = typeElement.GetType().Name ?? string.Empty;
+                if (typeName.IndexOf("RebarBendingDetailType", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return (true, typeElement);
+                }
+
+                return (false, typeElement);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null);
             }
         }
 
@@ -833,7 +969,7 @@ namespace ShimizRevitAddin2026.Services
                 {
                     try
                     {
-                        var (ok, t, reason) = TryIntersectRayWithBoundingBox2D(e, uo, vo, du, dv, right, up);
+                        var (ok, t, reason) = TryIntersectRayWithBoundingBox2D(e, view, uo, vo, du, dv, right, up);
                         if (!ok)
                         {
                             if (!string.IsNullOrWhiteSpace(reason) && e != null)
@@ -967,6 +1103,7 @@ namespace ShimizRevitAddin2026.Services
 
         private (bool ok, double tEnter, string reason) TryIntersectRayWithBoundingBox2D(
             Element element,
+            View view,
             double uo,
             double vo,
             double du,
@@ -981,10 +1118,10 @@ namespace ShimizRevitAddin2026.Services
                     return (false, 0, "Element が null です。");
                 }
 
-                var bb = element.get_BoundingBox(null);
-                if (bb == null || bb.Min == null || bb.Max == null)
+                var (hasBb, bb, bbReason) = TryGetBoundingBoxPreferView(element, view);
+                if (!hasBb || bb == null || bb.Min == null || bb.Max == null)
                 {
-                    return (false, 0, "BoundingBox を取得できません。");
+                    return (false, 0, string.IsNullOrWhiteSpace(bbReason) ? "BoundingBox を取得できません。" : bbReason);
                 }
 
                 // 8頂点をビュー座標に投影して2DのAABBを作る
@@ -1030,6 +1167,75 @@ namespace ShimizRevitAddin2026.Services
             {
                 Debug.WriteLine(ex);
                 return (false, 0, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private (bool ok, BoundingBoxXYZ bb, string reason) TryGetBoundingBoxPreferView(Element element, View view)
+        {
+            try
+            {
+                if (element == null)
+                {
+                    return (false, null, "Element が null です。");
+                }
+
+                // ビュー専用要素は get_BoundingBox(view) でないと null になることがある
+                var (hasViewBb, viewBb, viewReason) = TryGetBoundingBox(element, view);
+                if (hasViewBb)
+                {
+                    return (true, viewBb, string.Empty);
+                }
+
+                var (hasModelBb, modelBb, modelReason) = TryGetBoundingBox(element, null);
+                if (hasModelBb)
+                {
+                    return (true, modelBb, string.Empty);
+                }
+
+                var reason = string.Join(" / ", new[] { viewReason, modelReason }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                return (false, null, string.IsNullOrWhiteSpace(reason) ? "BoundingBox を取得できません。" : reason);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private (bool ok, BoundingBoxXYZ bb, string reason) TryGetBoundingBox(Element element, View view)
+        {
+            try
+            {
+                if (element == null)
+                {
+                    return (false, null, "Element が null です。");
+                }
+
+                BoundingBoxXYZ bb;
+                try
+                {
+                    bb = element.get_BoundingBox(view);
+                }
+                catch (Autodesk.Revit.Exceptions.InternalException iex)
+                {
+                    return (false, null, $"get_BoundingBox: InternalException: {iex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    return (false, null, $"get_BoundingBox: {ex.GetType().Name}: {ex.Message}");
+                }
+
+                if (bb == null || bb.Min == null || bb.Max == null)
+                {
+                    return (false, null, "BoundingBox が null です。");
+                }
+
+                return (true, bb, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -1088,6 +1294,12 @@ namespace ShimizRevitAddin2026.Services
         private (bool ok, ElementId rebarId) TryResolveHostRebarIdFromBendingDetail(Document doc, Element bendingDetail)
         {
             // まずは型特有の API があれば反射で拾い、無ければパラメータから Rebar を探す
+            var (okByStaticApi, idByStaticApi) = TryResolveHostByRebarBendingDetailStaticApi(doc, bendingDetail);
+            if (okByStaticApi)
+            {
+                return (true, idByStaticApi);
+            }
+
             var (okByApi, idByApi) = TryResolveHostByReflection(doc, bendingDetail);
             if (okByApi)
             {
@@ -1095,6 +1307,164 @@ namespace ShimizRevitAddin2026.Services
             }
 
             return TryResolveHostByParameters(doc, bendingDetail);
+        }
+
+        private (bool ok, ElementId rebarId) TryResolveHostByRebarBendingDetailStaticApi(Document doc, Element bendingDetail)
+        {
+            try
+            {
+                if (doc == null || bendingDetail == null)
+                {
+                    return (false, ElementId.InvalidElementId);
+                }
+
+                var apiType = typeof(Autodesk.Revit.DB.Structure.RebarBendingDetail);
+                var methods = apiType
+                    .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                    .Where(m => string.Equals(m.Name, "GetHost", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(m.Name, "GetHosts", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var m in methods)
+                {
+                    var (canCall, args) = TryBuildArgsForBendingDetailApiCall(m, doc, bendingDetail);
+                    if (!canCall)
+                    {
+                        continue;
+                    }
+
+                    object result;
+                    try
+                    {
+                        result = m.Invoke(null, args);
+                    }
+                    catch (System.Reflection.TargetInvocationException tex)
+                    {
+                        Debug.WriteLine(tex.InnerException ?? tex);
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine(ex);
+                        continue;
+                    }
+
+                    var (ok, rebarId) = TryExtractRebarIdFromHostResult(doc, result);
+                    if (ok)
+                    {
+                        return (true, rebarId);
+                    }
+                }
+
+                return (false, ElementId.InvalidElementId);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, ElementId.InvalidElementId);
+            }
+        }
+
+        private (bool ok, object[] args) TryBuildArgsForBendingDetailApiCall(
+            System.Reflection.MethodInfo method,
+            Document doc,
+            Element bendingDetail)
+        {
+            try
+            {
+                if (method == null || doc == null || bendingDetail == null)
+                {
+                    return (false, null);
+                }
+
+                var ps = method.GetParameters();
+                if (ps == null)
+                {
+                    return (false, null);
+                }
+
+                // 想定される代表的なシグネチャに合わせて引数を構築する
+                // - (Document, ElementId)
+                // - (Document, Element)
+                // - (ElementId)
+                // - (Element)
+                if (ps.Length == 2 &&
+                    ps[0].ParameterType == typeof(Document) &&
+                    ps[1].ParameterType == typeof(ElementId))
+                {
+                    return (true, new object[] { doc, bendingDetail.Id });
+                }
+
+                if (ps.Length == 2 &&
+                    ps[0].ParameterType == typeof(Document) &&
+                    ps[1].ParameterType.IsAssignableFrom(bendingDetail.GetType()))
+                {
+                    return (true, new object[] { doc, bendingDetail });
+                }
+
+                if (ps.Length == 1 && ps[0].ParameterType == typeof(ElementId))
+                {
+                    return (true, new object[] { bendingDetail.Id });
+                }
+
+                if (ps.Length == 1 && ps[0].ParameterType.IsAssignableFrom(bendingDetail.GetType()))
+                {
+                    return (true, new object[] { bendingDetail });
+                }
+
+                return (false, null);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null);
+            }
+        }
+
+        private (bool ok, ElementId rebarId) TryExtractRebarIdFromHostResult(Document doc, object result)
+        {
+            try
+            {
+                if (doc == null || result == null)
+                {
+                    return (false, ElementId.InvalidElementId);
+                }
+
+                if (result is ElementId id)
+                {
+                    return doc.GetElement(id) is Rebar ? (true, id) : (false, ElementId.InvalidElementId);
+                }
+
+                if (result is Element e)
+                {
+                    return e is Rebar ? (true, e.Id) : (false, ElementId.InvalidElementId);
+                }
+
+                if (result is Reference r)
+                {
+                    var eid = r.ElementId;
+                    return doc.GetElement(eid) is Rebar ? (true, eid) : (false, ElementId.InvalidElementId);
+                }
+
+                if (result is System.Collections.IEnumerable en)
+                {
+                    foreach (var item in en)
+                    {
+                        var (ok, rebarId) = TryExtractRebarIdFromHostResult(doc, item);
+                        if (ok)
+                        {
+                            return (true, rebarId);
+                        }
+                    }
+                }
+
+                return (false, ElementId.InvalidElementId);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, ElementId.InvalidElementId);
+            }
         }
 
         private (bool ok, ElementId rebarId) TryResolveHostByReflection(Document doc, Element bendingDetail)
