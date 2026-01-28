@@ -344,7 +344,7 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             grid.Columns.Add(new DataGridTextColumn
             {
-                Header = "曲げ詳細の鉄筋タグ",
+                Header = "曲げ詳細",
                 Binding = new System.Windows.Data.Binding(nameof(RebarTagPairRow.BendingDetailRebarTag)),
                 Width = new DataGridLength(1, DataGridLengthUnitType.Star)
             });

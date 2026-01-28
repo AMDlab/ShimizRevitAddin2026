@@ -184,7 +184,7 @@ namespace ShimizRevitAddin2026.ExternalEvents
                 var e = doc.GetElement(id);
                 if (e is IndependentTag tag)
                 {
-                    return NormalizeContent(tag.TagText, id);
+                    return BuildTagTextWithId(tag.TagText, id);
                 }
 
                 return id.Value.ToString();
@@ -196,14 +196,20 @@ namespace ShimizRevitAddin2026.ExternalEvents
             }
         }
 
-        private string NormalizeContent(string content, ElementId id)
+        private string BuildTagTextWithId(string content, ElementId id)
         {
-            if (!string.IsNullOrWhiteSpace(content))
+            if (id == null)
             {
-                return content;
+                return content ?? string.Empty;
             }
 
-            return id == null ? string.Empty : id.Value.ToString();
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return id.Value.ToString();
+            }
+
+            // タグ文字と要素IDを同時に表示する
+            return $"{content} / {id.Value}";
         }
 
         private void NotifyCompleted(RebarTagCheckResult result)
