@@ -35,12 +35,13 @@ namespace ShimizRevitAddin2026.Commands
 
                 var rebars = CollectRebars(doc, activeView);
                 var dependentTagCollector = BuildDependentTagCollector();
-                var mismatchRebarIds = CollectMismatchRebarIds(doc, activeView, rebars, dependentTagCollector);
-                var items = BuildRebarItems(rebars, mismatchRebarIds);
-                var rebarCount = GetRebarCount(rebars);
+                var consistencyService = BuildConsistencyService(dependentTagCollector);
+                var mismatchRebarIds = CollectMismatchRebarIds(doc, activeView, rebars, consistencyService);
+                var hostRebarIdsWithBendingDetail = CollectHostRebarIdsWithBendingDetail(doc, activeView, consistencyService);
+                var items = BuildRebarItems(doc, activeView, rebars, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail);
+                var rebarCount = GetRebarCount(items);
 
                 var highlighter = BuildHighlighter(dependentTagCollector);
-                var consistencyService = new RebarTagLeaderBendingDetailConsistencyService(dependentTagCollector);
                 var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
                 var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items, rebarCount);
                 SetOwner(uiapp, window);
@@ -67,13 +68,69 @@ namespace ShimizRevitAddin2026.Commands
             return collector.Collect(doc, activeView);
         }
 
-        private IReadOnlyList<RebarListItem> BuildRebarItems(IReadOnlyList<Rebar> rebars, IReadOnlyCollection<ElementId> mismatchRebarIds)
+        private IReadOnlyList<RebarListItem> BuildRebarItems(
+            Document doc,
+            View activeView,
+            IReadOnlyList<Rebar> rebars,
+            IReadOnlyCollection<ElementId> mismatchRebarIds,
+            RebarDependentTagCollector dependentTagCollector,
+            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail)
         {
             if (rebars == null) return new List<RebarListItem>();
 
             return rebars
+                .Where(r => !ShouldHideRebar(doc, activeView, r, dependentTagCollector, hostRebarIdsWithBendingDetail))
                 .Select(r => new RebarListItem(r.Id, BuildDisplayText(r), IsMismatchRebar(mismatchRebarIds, r.Id)))
                 .ToList();
+        }
+
+        private bool ShouldHideRebar(
+            Document doc,
+            View activeView,
+            Rebar rebar,
+            RebarDependentTagCollector dependentTagCollector,
+            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail)
+        {
+            // 構造タグがあり、かつ曲げ詳細鉄筋（曲げ詳細要素）が無い場合は表示しない
+            if (!HasStructureRebarTag(doc, activeView, rebar, dependentTagCollector))
+            {
+                return false;
+            }
+
+            if (rebar == null || rebar.Id == null || rebar.Id == ElementId.InvalidElementId)
+            {
+                return false;
+            }
+
+            if (hostRebarIdsWithBendingDetail == null || hostRebarIdsWithBendingDetail.Count == 0)
+            {
+                return true;
+            }
+
+            return !hostRebarIdsWithBendingDetail.Contains(rebar.Id);
+        }
+
+        private bool HasStructureRebarTag(
+            Document doc,
+            View activeView,
+            Rebar rebar,
+            RebarDependentTagCollector dependentTagCollector)
+        {
+            try
+            {
+                if (doc == null || activeView == null || rebar == null || dependentTagCollector == null)
+                {
+                    return false;
+                }
+
+                var model = dependentTagCollector.Collect(doc, rebar, activeView);
+                return model != null && model.StructureTagIds != null && model.StructureTagIds.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return false;
+            }
         }
 
         private bool IsMismatchRebar(IReadOnlyCollection<ElementId> mismatchRebarIds, ElementId rebarId)
@@ -91,9 +148,9 @@ namespace ShimizRevitAddin2026.Commands
             return mismatchRebarIds.Contains(rebarId);
         }
 
-        private int GetRebarCount(IReadOnlyList<Rebar> rebars)
+        private int GetRebarCount(IReadOnlyList<RebarListItem> items)
         {
-            return rebars == null ? 0 : rebars.Count;
+            return items == null ? 0 : items.Count;
         }
 
         private string BuildDisplayText(Rebar rebar)
@@ -150,23 +207,48 @@ namespace ShimizRevitAddin2026.Commands
             Document doc,
             View activeView,
             IReadOnlyList<Rebar> rebars,
-            RebarDependentTagCollector dependentTagCollector)
+            RebarTagLeaderBendingDetailConsistencyService consistencyService)
         {
             try
             {
-                if (doc == null || activeView == null || rebars == null || dependentTagCollector == null)
+                if (doc == null || activeView == null || rebars == null || consistencyService == null)
                 {
                     return new List<ElementId>();
                 }
 
-                var checker = new RebarTagLeaderBendingDetailConsistencyService(dependentTagCollector);
-                return checker.CollectMismatchRebarIds(doc, rebars, activeView);
+                return consistencyService.CollectMismatchRebarIds(doc, rebars, activeView);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
                 return new List<ElementId>();
             }
+        }
+
+        private IReadOnlyCollection<ElementId> CollectHostRebarIdsWithBendingDetail(
+            Document doc,
+            View activeView,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService)
+        {
+            try
+            {
+                if (doc == null || activeView == null || consistencyService == null)
+                {
+                    return new List<ElementId>();
+                }
+
+                return consistencyService.CollectHostRebarIdsWithBendingDetail(doc, activeView);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new List<ElementId>();
+            }
+        }
+
+        private RebarTagLeaderBendingDetailConsistencyService BuildConsistencyService(RebarDependentTagCollector dependentTagCollector)
+        {
+            return new RebarTagLeaderBendingDetailConsistencyService(dependentTagCollector);
         }
 
         private RebarTagHighlighter BuildHighlighter(RebarDependentTagCollector collector)

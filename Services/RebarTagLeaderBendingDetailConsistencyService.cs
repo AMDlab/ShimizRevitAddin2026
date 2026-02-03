@@ -39,6 +39,52 @@ namespace ShimizRevitAddin2026.Services
             return CollectMismatchRebarIdsInternal(doc, rebars, view, bendingDetails);
         }
 
+        public IReadOnlyCollection<ElementId> CollectHostRebarIdsWithBendingDetail(Document doc, View view)
+        {
+            if (doc == null) throw new ArgumentNullException(nameof(doc));
+            if (view == null) throw new ArgumentNullException(nameof(view));
+
+            var bendingDetails = CollectBendingDetailElementsInView(doc, view);
+            return CollectHostRebarIdsWithBendingDetailInternal(doc, bendingDetails);
+        }
+
+        private IReadOnlyCollection<ElementId> CollectHostRebarIdsWithBendingDetailInternal(
+            Document doc,
+            IReadOnlyList<Element> bendingDetails)
+        {
+            try
+            {
+                var result = new HashSet<ElementId>();
+                if (doc == null || bendingDetails == null || bendingDetails.Count == 0)
+                {
+                    return result.ToList();
+                }
+
+                foreach (var bd in bendingDetails)
+                {
+                    if (bd == null)
+                    {
+                        continue;
+                    }
+
+                    var (ok, hostRebarId) = TryResolveHostRebarIdFromBendingDetail(doc, bd);
+                    if (!ok || hostRebarId == null || hostRebarId == ElementId.InvalidElementId)
+                    {
+                        continue;
+                    }
+
+                    result.Add(hostRebarId);
+                }
+
+                return result.ToList();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new List<ElementId>();
+            }
+        }
+
         private IReadOnlyCollection<ElementId> CollectMismatchRebarIdsInternal(
             Document doc,
             IReadOnlyList<Rebar> rebars,
