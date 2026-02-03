@@ -66,10 +66,40 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             Rebars.Clear();
             if (items == null) return;
 
-            foreach (var item in items)
+            foreach (var item in BuildOrderedRebarItems(items))
             {
                 Rebars.Add(item);
             }
+        }
+
+        private IEnumerable<RebarListItem> BuildOrderedRebarItems(IEnumerable<RebarListItem> items)
+        {
+            // 不一致（赤表示）を先頭に並べる
+            return items
+                .OrderByDescending(GetMismatchSortKey)
+                .ThenBy(GetSafeDisplayText)
+                .ThenBy(GetSafeRebarIdValue);
+        }
+
+        private int GetMismatchSortKey(RebarListItem item)
+        {
+            if (item == null) return 0;
+            return item.IsLeaderMismatch ? 1 : 0;
+        }
+
+        private string GetSafeDisplayText(RebarListItem item)
+        {
+            return item == null ? string.Empty : (item.DisplayText ?? string.Empty);
+        }
+
+        private int GetSafeRebarIdValue(RebarListItem item)
+        {
+            if (item == null || item.RebarId == null)
+            {
+                return int.MaxValue;
+            }
+
+            return item.RebarId.Value;
         }
 
         public void UpdateRowsFromModel(RebarTag model)
