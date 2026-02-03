@@ -14,6 +14,18 @@ namespace ShimizRevitAddin2026.UI.ViewModels
         public ObservableCollection<RebarListItem> Rebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarTagPairRow> Rows { get; } = new ObservableCollection<RebarTagPairRow>();
 
+        private string _ngReasonText = string.Empty;
+        public string NgReasonText
+        {
+            get => _ngReasonText;
+            private set
+            {
+                if (_ngReasonText == value) return;
+                _ngReasonText = value ?? string.Empty;
+                OnPropertyChanged();
+            }
+        }
+
         private string _targetViewText = string.Empty;
         public string TargetViewText
         {
@@ -26,9 +38,27 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             }
         }
 
+        private string _rebarCountText = string.Empty;
+        public string RebarCountText
+        {
+            get => _rebarCountText;
+            private set
+            {
+                if (_rebarCountText == value) return;
+                _rebarCountText = value ?? string.Empty;
+                OnPropertyChanged();
+            }
+        }
+
         public void SetTargetView(View view)
         {
             TargetViewText = view == null ? string.Empty : view.Name;
+        }
+
+        public void SetRebarCount(int count)
+        {
+            if (count < 0) count = 0;
+            RebarCountText = count.ToString();
         }
 
         public void SetRebars(IEnumerable<RebarListItem> items)
@@ -36,10 +66,40 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             Rebars.Clear();
             if (items == null) return;
 
-            foreach (var item in items)
+            foreach (var item in BuildOrderedRebarItems(items))
             {
                 Rebars.Add(item);
             }
+        }
+
+        private IEnumerable<RebarListItem> BuildOrderedRebarItems(IEnumerable<RebarListItem> items)
+        {
+            // 不一致（赤表示）を先頭に並べる
+            return items
+                .OrderByDescending(GetMismatchSortKey)
+                .ThenBy(GetSafeDisplayText)
+                .ThenBy(GetSafeRebarIdValue);
+        }
+
+        private int GetMismatchSortKey(RebarListItem item)
+        {
+            if (item == null) return 0;
+            return item.IsLeaderMismatch ? 1 : 0;
+        }
+
+        private string GetSafeDisplayText(RebarListItem item)
+        {
+            return item == null ? string.Empty : (item.DisplayText ?? string.Empty);
+        }
+
+        private long GetSafeRebarIdValue(RebarListItem item)
+        {
+            if (item == null || item.RebarId == null)
+            {
+                return long.MaxValue;
+            }
+
+            return item.RebarId.Value;
         }
 
         public void UpdateRowsFromModel(RebarTag model)
@@ -64,6 +124,11 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             {
                 Rows.Add(row);
             }
+        }
+
+        public void UpdateNgReason(string text)
+        {
+            NgReasonText = text ?? string.Empty;
         }
 
         private void ClearRows()

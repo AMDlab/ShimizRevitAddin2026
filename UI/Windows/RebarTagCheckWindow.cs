@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
@@ -30,7 +32,8 @@ namespace ShimizRevitAddin2026.UI.Windows
             UIDocument uidoc,
             View targetView,
             RebarTagHighlightExternalEventService externalEventService,
-            IReadOnlyList<RebarListItem> rebars)
+            IReadOnlyList<RebarListItem> rebars,
+            int rebarCount)
         {
             _uidoc = uidoc;
             _targetView = targetView;
@@ -39,6 +42,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             _vm = new RebarTagCheckViewModel();
             _vm.SetTargetView(targetView);
             _vm.SetRebars(rebars);
+            _vm.SetRebarCount(rebarCount);
 
             DataContext = _vm;
             InitializeWindow();
@@ -118,8 +122,9 @@ namespace ShimizRevitAddin2026.UI.Windows
 
         private UIElement CreateHeader()
         {
-            var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(16, 12, 16, 8) };
+            var root = new StackPanel { Margin = new Thickness(16, 12, 16, 8) };
 
+            var panel = new DockPanel { LastChildFill = true };
             var label = new System.Windows.Controls.TextBlock
             {
                 Text = "対象View：",
@@ -140,8 +145,32 @@ namespace ShimizRevitAddin2026.UI.Windows
             panel.Children.Add(label);
             panel.Children.Add(value);
 
-            System.Windows.Controls.Grid.SetRow(panel, 0);
-            return panel;
+            root.Children.Add(panel);
+
+            var countPanel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 0) };
+            var countLabel = new System.Windows.Controls.TextBlock
+            {
+                Text = "鉄筋数：",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            DockPanel.SetDock(countLabel, Dock.Left);
+
+            var countValue = new System.Windows.Controls.TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold
+            };
+            countValue.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.RebarCountText)));
+
+            countPanel.Children.Add(countLabel);
+            countPanel.Children.Add(countValue);
+            root.Children.Add(countPanel);
+
+            System.Windows.Controls.Grid.SetRow(root, 0);
+            return root;
         }
 
         private UIElement CreateBody()
@@ -163,51 +192,136 @@ namespace ShimizRevitAddin2026.UI.Windows
             return grid;
         }
 
+        private Card CreateCard()
+        {
+            return new Card
+            {
+                Padding = new Thickness(12),
+                VerticalAlignment = VerticalAlignment.Stretch,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                SnapsToDevicePixels = true
+            };
+        }
+
         private UIElement CreateRebarListCard()
         {
-            var card = new Card { Padding = new Thickness(12) };
-            var stack = new StackPanel();
+            var card = CreateCard();
 
-            stack.Children.Add(new System.Windows.Controls.TextBlock
+            var grid = new System.Windows.Controls.Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var title = new System.Windows.Controls.TextBlock
             {
                 Text = "鉄筋List",
                 FontSize = 16,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 8)
-            });
+            };
+            System.Windows.Controls.Grid.SetRow(title, 0);
+            grid.Children.Add(title);
 
             _rebarListBox = new ListBox
             {
                 MinHeight = 400,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch
             };
+            _rebarListBox.ItemContainerStyle = BuildRebarListItemStyle();
+            ScrollViewer.SetVerticalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Auto);
+            ScrollViewer.SetHorizontalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Disabled);
             _rebarListBox.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Rebars)));
             _rebarListBox.SelectionChanged += OnRebarSelectionChanged;
 
-            stack.Children.Add(_rebarListBox);
-            card.Content = stack;
+            System.Windows.Controls.Grid.SetRow(_rebarListBox, 1);
+            grid.Children.Add(_rebarListBox);
+
+            card.Content = grid;
             return card;
+        }
+
+        private Style BuildRebarListItemStyle()
+        {
+            // 不一致がある鉄筋を視覚的に強調する
+            var style = new Style(typeof(ListBoxItem));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Black));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.Normal));
+
+            var mismatchTrigger = new DataTrigger
+            {
+                Binding = new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsLeaderMismatch)),
+                Value = true
+            };
+            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Red));
+            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
+            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 238))));
+
+            style.Triggers.Add(mismatchTrigger);
+            return style;
         }
 
         private UIElement CreateResultCard()
         {
-            var card = new Card { Padding = new Thickness(12) };
-            var stack = new StackPanel();
+            var card = CreateCard();
 
-            stack.Children.Add(new System.Windows.Controls.TextBlock
+            var grid = new System.Windows.Controls.Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var title = new System.Windows.Controls.TextBlock
             {
                 Text = "検証結果",
                 FontSize = 16,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 8)
-            });
+            };
+            System.Windows.Controls.Grid.SetRow(title, 0);
+            grid.Children.Add(title);
 
             _resultGrid = CreateResultGrid();
             _resultGrid.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Rows)));
 
-            stack.Children.Add(_resultGrid);
-            card.Content = stack;
+            System.Windows.Controls.Grid.SetRow(_resultGrid, 1);
+            grid.Children.Add(_resultGrid);
+
+            var ngPanel = CreateNgReasonPanel();
+            System.Windows.Controls.Grid.SetRow(ngPanel, 2);
+            grid.Children.Add(ngPanel);
+
+            card.Content = grid;
             return card;
+        }
+
+        private UIElement CreateNgReasonPanel()
+        {
+            var panel = new System.Windows.Controls.Grid { Margin = new Thickness(0, 12, 0, 0) };
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(140) });
+
+            var label = new System.Windows.Controls.TextBlock
+            {
+                Text = "メッセージボックス",
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            System.Windows.Controls.Grid.SetRow(label, 0);
+            panel.Children.Add(label);
+
+            var box = new System.Windows.Controls.TextBox
+            {
+                IsReadOnly = true,
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            box.SetBinding(System.Windows.Controls.TextBox.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.NgReasonText)));
+            System.Windows.Controls.Grid.SetRow(box, 1);
+            panel.Children.Add(box);
+
+            return panel;
         }
 
         private System.Windows.Controls.DataGrid CreateResultGrid()
@@ -230,7 +344,7 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             grid.Columns.Add(new DataGridTextColumn
             {
-                Header = "曲げ詳細の鉄筋タグ",
+                Header = "曲げ詳細",
                 Binding = new System.Windows.Data.Binding(nameof(RebarTagPairRow.BendingDetailRebarTag)),
                 Width = new DataGridLength(1, DataGridLengthUnitType.Star)
             });
@@ -298,6 +412,7 @@ namespace ShimizRevitAddin2026.UI.Windows
                     var structure = result?.Structure ?? new List<string>();
                     var bending = result?.Bending ?? new List<string>();
                     _vm.UpdateRows(structure, bending);
+                    _vm.UpdateNgReason(result?.NgReason ?? string.Empty);
                 });
             }
             catch (Exception ex)

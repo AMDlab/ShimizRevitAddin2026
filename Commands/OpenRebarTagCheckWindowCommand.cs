@@ -34,11 +34,15 @@ namespace ShimizRevitAddin2026.Commands
                 var activeView = doc.ActiveView;
 
                 var rebars = CollectRebars(doc, activeView);
-                var items = BuildRebarItems(rebars);
+                var dependentTagCollector = BuildDependentTagCollector();
+                var mismatchRebarIds = CollectMismatchRebarIds(doc, activeView, rebars, dependentTagCollector);
+                var items = BuildRebarItems(rebars, mismatchRebarIds);
+                var rebarCount = GetRebarCount(rebars);
 
-                var highlighter = BuildHighlighter();
-                var externalEventService = new RebarTagHighlightExternalEventService(highlighter);
-                var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items);
+                var highlighter = BuildHighlighter(dependentTagCollector);
+                var consistencyService = new RebarTagLeaderBendingDetailConsistencyService(dependentTagCollector);
+                var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
+                var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items, rebarCount);
                 SetOwner(uiapp, window);
 
                 _windowStore.SetCurrent(window);
@@ -63,34 +67,71 @@ namespace ShimizRevitAddin2026.Commands
             return collector.Collect(doc, activeView);
         }
 
-        private IReadOnlyList<RebarListItem> BuildRebarItems(IReadOnlyList<Rebar> rebars)
+        private IReadOnlyList<RebarListItem> BuildRebarItems(IReadOnlyList<Rebar> rebars, IReadOnlyCollection<ElementId> mismatchRebarIds)
         {
             if (rebars == null) return new List<RebarListItem>();
 
             return rebars
-                .Select(r => new RebarListItem(r.Id, BuildDisplayText(r)))
+                .Select(r => new RebarListItem(r.Id, BuildDisplayText(r), IsMismatchRebar(mismatchRebarIds, r.Id)))
                 .ToList();
+        }
+
+        private bool IsMismatchRebar(IReadOnlyCollection<ElementId> mismatchRebarIds, ElementId rebarId)
+        {
+            if (mismatchRebarIds == null || mismatchRebarIds.Count == 0)
+            {
+                return false;
+            }
+
+            if (rebarId == null || rebarId == ElementId.InvalidElementId)
+            {
+                return false;
+            }
+
+            return mismatchRebarIds.Contains(rebarId);
+        }
+
+        private int GetRebarCount(IReadOnlyList<Rebar> rebars)
+        {
+            return rebars == null ? 0 : rebars.Count;
         }
 
         private string BuildDisplayText(Rebar rebar)
         {
             if (rebar == null) return string.Empty;
 
-            var mark = GetMark(rebar);
-            if (string.IsNullOrWhiteSpace(mark))
+            var typeName = GetTypeName(rebar);
+            if (string.IsNullOrWhiteSpace(typeName))
             {
                 return $"ID: {rebar.Id.Value}";
             }
 
-            return $"ID: {rebar.Id.Value} / Mark: {mark}";
+            return $"{typeName} / ID: {rebar.Id.Value}";
         }
 
-        private string GetMark(Rebar rebar)
+        private string GetTypeName(Rebar rebar)
         {
             try
             {
-                var p = rebar.get_Parameter(BuiltInParameter.ALL_MODEL_MARK);
-                return p == null ? string.Empty : p.AsString();
+                if (rebar == null)
+                {
+                    return string.Empty;
+                }
+
+                var doc = rebar.Document;
+                if (doc == null)
+                {
+                    return string.Empty;
+                }
+
+                var typeId = rebar.GetTypeId();
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                {
+                    return string.Empty;
+                }
+
+                var type = doc.GetElement(typeId) as ElementType;
+                return type == null ? string.Empty : (type.Name ?? string.Empty);
             }
             catch (Exception ex)
             {
@@ -99,10 +140,37 @@ namespace ShimizRevitAddin2026.Commands
             }
         }
 
-        private RebarTagHighlighter BuildHighlighter()
+        private RebarDependentTagCollector BuildDependentTagCollector()
         {
             var matcher = new RebarTagNameMatcher(BendingDetailTagName);
-            var collector = new RebarDependentTagCollector(matcher);
+            return new RebarDependentTagCollector(matcher);
+        }
+
+        private IReadOnlyCollection<ElementId> CollectMismatchRebarIds(
+            Document doc,
+            View activeView,
+            IReadOnlyList<Rebar> rebars,
+            RebarDependentTagCollector dependentTagCollector)
+        {
+            try
+            {
+                if (doc == null || activeView == null || rebars == null || dependentTagCollector == null)
+                {
+                    return new List<ElementId>();
+                }
+
+                var checker = new RebarTagLeaderBendingDetailConsistencyService(dependentTagCollector);
+                return checker.CollectMismatchRebarIds(doc, rebars, activeView);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new List<ElementId>();
+            }
+        }
+
+        private RebarTagHighlighter BuildHighlighter(RebarDependentTagCollector collector)
+        {
             return new RebarTagHighlighter(collector);
         }
 
