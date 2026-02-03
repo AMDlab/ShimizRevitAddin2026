@@ -247,15 +247,24 @@ namespace ShimizRevitAddin2026.UI.Windows
             style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Black));
             style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.Normal));
 
-            var mismatchTrigger = new DataTrigger
+            var noTagNoBendingDetailTrigger = new DataTrigger
             {
-                Binding = new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsLeaderMismatch)),
+                Binding = new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsNoTagAndNoBendingDetail)),
                 Value = true
             };
+            // 構造タグなし・曲げ詳細なし（鉄筋のみ）を青で表示
+            noTagNoBendingDetailTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Blue));
+            noTagNoBendingDetailTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
+            noTagNoBendingDetailTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(227, 242, 253))));
+
+            var mismatchTrigger = new MultiDataTrigger();
+            mismatchTrigger.Conditions.Add(new Condition(new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsLeaderMismatch)), true));
+            mismatchTrigger.Conditions.Add(new Condition(new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsNoTagAndNoBendingDetail)), false));
             mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Red));
             mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
             mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 238))));
 
+            style.Triggers.Add(noTagNoBendingDetailTrigger);
             style.Triggers.Add(mismatchTrigger);
             return style;
         }

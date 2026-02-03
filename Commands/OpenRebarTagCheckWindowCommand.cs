@@ -80,8 +80,64 @@ namespace ShimizRevitAddin2026.Commands
 
             return rebars
                 .Where(r => !ShouldHideRebar(doc, activeView, r, dependentTagCollector, hostRebarIdsWithBendingDetail))
-                .Select(r => new RebarListItem(r.Id, BuildDisplayText(r), IsMismatchRebar(mismatchRebarIds, r.Id)))
+                .Select(r => BuildRebarListItem(doc, activeView, r, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail))
                 .ToList();
+        }
+
+        private RebarListItem BuildRebarListItem(
+            Document doc,
+            View activeView,
+            Rebar rebar,
+            IReadOnlyCollection<ElementId> mismatchRebarIds,
+            RebarDependentTagCollector dependentTagCollector,
+            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail)
+        {
+            if (rebar == null)
+            {
+                return new RebarListItem(ElementId.InvalidElementId, string.Empty, false, false);
+            }
+
+            var isMismatch = IsMismatchRebar(mismatchRebarIds, rebar.Id);
+            var isNoTagAndNoBendingDetail = IsNoTagAndNoBendingDetail(doc, activeView, rebar, dependentTagCollector, hostRebarIdsWithBendingDetail);
+            return new RebarListItem(rebar.Id, BuildDisplayText(rebar), isMismatch, isNoTagAndNoBendingDetail);
+        }
+
+        private bool IsNoTagAndNoBendingDetail(
+            Document doc,
+            View activeView,
+            Rebar rebar,
+            RebarDependentTagCollector dependentTagCollector,
+            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail)
+        {
+            // 鉄筋のみ（構造タグなし・曲げ詳細なし）を青で識別するための判定
+            if (rebar == null || rebar.Id == null || rebar.Id == ElementId.InvalidElementId)
+            {
+                return false;
+            }
+
+            var hasStructureTag = HasStructureRebarTag(doc, activeView, rebar, dependentTagCollector);
+            if (hasStructureTag)
+            {
+                return false;
+            }
+
+            var hasBendingDetail = HasBendingDetail(hostRebarIdsWithBendingDetail, rebar.Id);
+            return !hasBendingDetail;
+        }
+
+        private bool HasBendingDetail(IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail, ElementId rebarId)
+        {
+            if (rebarId == null || rebarId == ElementId.InvalidElementId)
+            {
+                return false;
+            }
+
+            if (hostRebarIdsWithBendingDetail == null || hostRebarIdsWithBendingDetail.Count == 0)
+            {
+                return false;
+            }
+
+            return hostRebarIdsWithBendingDetail.Contains(rebarId);
         }
 
         private bool ShouldHideRebar(
