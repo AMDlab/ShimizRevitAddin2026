@@ -21,7 +21,6 @@ namespace ShimizRevitAddin2026.UI.Windows
     internal class RebarTagCheckWindow : System.Windows.Window
     {
         private readonly UIDocument _uidoc;
-        private readonly View _targetView;
         private readonly RebarTagHighlightExternalEventService _externalEventService;
         private readonly RebarTagCheckViewModel _vm;
 
@@ -36,11 +35,32 @@ namespace ShimizRevitAddin2026.UI.Windows
             int rebarCount)
         {
             _uidoc = uidoc;
-            _targetView = targetView;
             _externalEventService = externalEventService;
 
             _vm = new RebarTagCheckViewModel();
             _vm.SetTargetView(targetView);
+            _vm.SetRebars(rebars);
+            _vm.SetRebarCount(rebarCount);
+
+            DataContext = _vm;
+            InitializeWindow();
+            ApplyWpfUiResources();
+            BuildLayout();
+        }
+
+        public RebarTagCheckWindow(
+            UIDocument uidoc,
+            ViewSheet sheet,
+            IReadOnlyList<View> views,
+            RebarTagHighlightExternalEventService externalEventService,
+            IReadOnlyList<RebarListItem> rebars,
+            int rebarCount)
+        {
+            _uidoc = uidoc;
+            _externalEventService = externalEventService;
+
+            _vm = new RebarTagCheckViewModel();
+            _vm.SetTargetSheetAndViews(sheet, views);
             _vm.SetRebars(rebars);
             _vm.SetRebarCount(rebarCount);
 
@@ -127,7 +147,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             var panel = new DockPanel { LastChildFill = true };
             var label = new System.Windows.Controls.TextBlock
             {
-                Text = "対象View：",
+                Text = "対象：",
                 VerticalAlignment = VerticalAlignment.Center,
                 FontSize = 16,
                 Margin = new Thickness(0, 0, 8, 0)
@@ -138,7 +158,8 @@ namespace ShimizRevitAddin2026.UI.Windows
             {
                 VerticalAlignment = VerticalAlignment.Center,
                 FontSize = 16,
-                FontWeight = FontWeights.SemiBold
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
             };
             value.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.TargetViewText)));
 
@@ -377,7 +398,7 @@ namespace ShimizRevitAddin2026.UI.Windows
                     return;
                 }
 
-                RequestHighlight(rebar.Id);
+                RequestHighlight(rebar.Id, item.ViewId);
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
             {
@@ -401,15 +422,20 @@ namespace ShimizRevitAddin2026.UI.Windows
             return e as Rebar;
         }
 
-        private void RequestHighlight(ElementId rebarId)
+        private void RequestHighlight(ElementId rebarId, ElementId viewId)
         {
-            if (_externalEventService == null || _targetView == null)
+            if (_externalEventService == null)
             {
                 return;
             }
 
-            var viewId = _targetView.Id;
-            _externalEventService.Request(rebarId, viewId, OnHighlightCompleted);
+            var safeViewId = viewId ?? ElementId.InvalidElementId;
+            if (safeViewId == ElementId.InvalidElementId)
+            {
+                safeViewId = _uidoc?.ActiveView?.Id ?? ElementId.InvalidElementId;
+            }
+
+            _externalEventService.Request(rebarId, safeViewId, OnHighlightCompleted);
         }
 
         private void OnHighlightCompleted(RebarTagCheckResult result)

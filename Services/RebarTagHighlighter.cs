@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
@@ -23,6 +24,9 @@ namespace ShimizRevitAddin2026.Services
             if (rebar == null) throw new ArgumentNullException(nameof(rebar));
             if (activeView == null) throw new ArgumentNullException(nameof(activeView));
 
+            // シート上から実行した場合でも、対象Viewに切り替えてから表示する
+            TrySetActiveView(uidoc, activeView);
+
             var model = CollectModel(uidoc.Document, rebar, activeView);
             var idsToHighlight = BuildSelectionIds(rebar.Id, model.MatchedTagIds);
 
@@ -30,6 +34,23 @@ namespace ShimizRevitAddin2026.Services
             uidoc.ShowElements(idsToHighlight);
 
             return model;
+        }
+
+        private void TrySetActiveView(UIDocument uidoc, View view)
+        {
+            if (uidoc == null || view == null)
+            {
+                return;
+            }
+
+            try
+            {
+                uidoc.ActiveView = view;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
         }
 
         private RebarTag CollectModel(Document doc, Rebar rebar, View activeView)

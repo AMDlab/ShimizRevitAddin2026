@@ -33,17 +33,16 @@ namespace ShimizRevitAddin2026.Commands
                 var doc = uidoc.Document;
                 var activeView = doc.ActiveView;
 
-                var rebars = CollectRebars(doc, activeView);
                 var dependentTagCollector = BuildDependentTagCollector();
                 var consistencyService = BuildConsistencyService(dependentTagCollector);
-                var mismatchRebarIds = CollectMismatchRebarIds(doc, activeView, rebars, consistencyService);
-                var hostRebarIdsWithBendingDetail = CollectHostRebarIdsWithBendingDetail(doc, activeView, consistencyService);
-                var items = BuildRebarItems(doc, activeView, rebars, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail);
+
+                var (sheet, targetViews, includeViewNamePrefix) = ResolveTargetViews(doc, activeView);
+                var items = CollectRebarItemsForViews(doc, targetViews, dependentTagCollector, consistencyService, includeViewNamePrefix);
                 var rebarCount = GetRebarCount(items);
 
                 var highlighter = BuildHighlighter(dependentTagCollector);
                 var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
-                var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, items, rebarCount);
+                var window = BuildWindow(uidoc, activeView, sheet, targetViews, externalEventService, items, rebarCount);
                 SetOwner(uiapp, window);
 
                 _windowStore.SetCurrent(window);
@@ -68,19 +67,89 @@ namespace ShimizRevitAddin2026.Commands
             return collector.Collect(doc, activeView);
         }
 
+        private IReadOnlyList<RebarListItem> CollectRebarItemsForViews(
+            Document doc,
+            IReadOnlyList<View> views,
+            RebarDependentTagCollector dependentTagCollector,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService,
+            bool includeViewNamePrefix)
+        {
+            if (views == null || views.Count == 0)
+            {
+                return new List<RebarListItem>();
+            }
+
+            var result = new List<RebarListItem>();
+            foreach (var view in views)
+            {
+                if (view == null)
+                {
+                    continue;
+                }
+
+                result.AddRange(CollectRebarItemsForSingleView(doc, view, dependentTagCollector, consistencyService, includeViewNamePrefix));
+            }
+
+            return result;
+        }
+
+        private IReadOnlyList<RebarListItem> CollectRebarItemsForSingleView(
+            Document doc,
+            View view,
+            RebarDependentTagCollector dependentTagCollector,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService,
+            bool includeViewNamePrefix)
+        {
+            var rebars = CollectRebars(doc, view);
+            var mismatchRebarIds = CollectMismatchRebarIds(doc, view, rebars, consistencyService);
+            var hostRebarIdsWithBendingDetail = CollectHostRebarIdsWithBendingDetail(doc, view, consistencyService);
+            return BuildRebarItems(doc, view, rebars, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix);
+        }
+
+        private (ViewSheet sheet, IReadOnlyList<View> views, bool includeViewNamePrefix) ResolveTargetViews(Document doc, View activeView)
+        {
+            var sheet = activeView as ViewSheet;
+            if (sheet == null)
+            {
+                return (null, new List<View> { activeView }, false);
+            }
+
+            var collector = new SheetPlacedViewCollector();
+            var views = collector.Collect(doc, sheet);
+            return (sheet, views, true);
+        }
+
+        private RebarTagCheckWindow BuildWindow(
+            UIDocument uidoc,
+            View activeView,
+            ViewSheet sheet,
+            IReadOnlyList<View> targetViews,
+            RebarTagHighlightExternalEventService externalEventService,
+            IReadOnlyList<RebarListItem> items,
+            int rebarCount)
+        {
+            if (sheet == null)
+            {
+                return new RebarTagCheckWindow(uidoc, activeView, externalEventService, items, rebarCount);
+            }
+
+            return new RebarTagCheckWindow(uidoc, sheet, targetViews ?? new List<View>(), externalEventService, items, rebarCount);
+        }
+
         private IReadOnlyList<RebarListItem> BuildRebarItems(
             Document doc,
             View activeView,
             IReadOnlyList<Rebar> rebars,
             IReadOnlyCollection<ElementId> mismatchRebarIds,
             RebarDependentTagCollector dependentTagCollector,
-            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail)
+            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail,
+            bool includeViewNamePrefix)
         {
             if (rebars == null) return new List<RebarListItem>();
 
             return rebars
                 .Where(r => !ShouldHideRebar(doc, activeView, r, dependentTagCollector, hostRebarIdsWithBendingDetail))
-                .Select(r => BuildRebarListItem(doc, activeView, r, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail))
+                .Select(r => BuildRebarListItem(doc, activeView, r, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix))
                 .ToList();
         }
 
@@ -90,16 +159,22 @@ namespace ShimizRevitAddin2026.Commands
             Rebar rebar,
             IReadOnlyCollection<ElementId> mismatchRebarIds,
             RebarDependentTagCollector dependentTagCollector,
-            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail)
+            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail,
+            bool includeViewNamePrefix)
         {
             if (rebar == null)
             {
-                return new RebarListItem(ElementId.InvalidElementId, string.Empty, false, false);
+                return new RebarListItem(ElementId.InvalidElementId, ElementId.InvalidElementId, string.Empty, false, false);
             }
 
             var isMismatch = IsMismatchRebar(mismatchRebarIds, rebar.Id);
             var isNoTagAndNoBendingDetail = IsNoTagAndNoBendingDetail(doc, activeView, rebar, dependentTagCollector, hostRebarIdsWithBendingDetail);
-            return new RebarListItem(rebar.Id, BuildDisplayText(rebar), isMismatch, isNoTagAndNoBendingDetail);
+            return new RebarListItem(
+                rebar.Id,
+                activeView?.Id ?? ElementId.InvalidElementId,
+                BuildDisplayText(activeView, rebar, includeViewNamePrefix),
+                isMismatch,
+                isNoTagAndNoBendingDetail);
         }
 
         private bool IsNoTagAndNoBendingDetail(
@@ -209,17 +284,27 @@ namespace ShimizRevitAddin2026.Commands
             return items == null ? 0 : items.Count;
         }
 
-        private string BuildDisplayText(Rebar rebar)
+        private string BuildDisplayText(View view, Rebar rebar, bool includeViewNamePrefix)
         {
             if (rebar == null) return string.Empty;
 
             var typeName = GetTypeName(rebar);
-            if (string.IsNullOrWhiteSpace(typeName))
+            var baseText = string.IsNullOrWhiteSpace(typeName)
+                ? $"ID: {rebar.Id.Value}"
+                : $"{typeName} / ID: {rebar.Id.Value}";
+
+            if (!includeViewNamePrefix)
             {
-                return $"ID: {rebar.Id.Value}";
+                return baseText;
             }
 
-            return $"{typeName} / ID: {rebar.Id.Value}";
+            var viewName = view == null ? string.Empty : (view.Name ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(viewName))
+            {
+                return baseText;
+            }
+
+            return $"{viewName} / {baseText}";
         }
 
         private string GetTypeName(Rebar rebar)

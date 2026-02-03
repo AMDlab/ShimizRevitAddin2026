@@ -55,6 +55,27 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             TargetViewText = view == null ? string.Empty : view.Name;
         }
 
+        public void SetTargetSheetAndViews(ViewSheet sheet, IEnumerable<View> views)
+        {
+            var sheetNumber = sheet == null ? string.Empty : (sheet.SheetNumber ?? string.Empty);
+            var sheetNameOnly = sheet == null ? string.Empty : (sheet.Name ?? string.Empty);
+            var sheetName = string.IsNullOrWhiteSpace(sheetNumber)
+                ? sheetNameOnly
+                : (string.IsNullOrWhiteSpace(sheetNameOnly) ? sheetNumber : $"{sheetNumber} {sheetNameOnly}");
+            var viewNames = views == null
+                ? new List<string>()
+                : views.Where(v => v != null).Select(v => v.Name ?? string.Empty).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+
+            if (viewNames.Count == 0)
+            {
+                TargetViewText = sheetName;
+                return;
+            }
+
+            var joined = string.Join(" / ", viewNames);
+            TargetViewText = string.IsNullOrWhiteSpace(sheetName) ? joined : $"{sheetName}  {joined}";
+        }
+
         public void SetRebarCount(int count)
         {
             if (count < 0) count = 0;
