@@ -92,11 +92,11 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             return item == null ? string.Empty : (item.DisplayText ?? string.Empty);
         }
 
-        private int GetSafeRebarIdValue(RebarListItem item)
+        private long GetSafeRebarIdValue(RebarListItem item)
         {
             if (item == null || item.RebarId == null)
             {
-                return int.MaxValue;
+                return long.MaxValue;
             }
 
             return item.RebarId.Value;
