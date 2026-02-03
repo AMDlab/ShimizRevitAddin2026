@@ -11,7 +11,9 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 {
     internal class RebarTagCheckViewModel : INotifyPropertyChanged
     {
-        public ObservableCollection<RebarListItem> Rebars { get; } = new ObservableCollection<RebarListItem>();
+        public ObservableCollection<RebarListItem> RedRebars { get; } = new ObservableCollection<RebarListItem>();
+        public ObservableCollection<RebarListItem> YellowRebars { get; } = new ObservableCollection<RebarListItem>();
+        public ObservableCollection<RebarListItem> BlueRebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarTagPairRow> Rows { get; } = new ObservableCollection<RebarTagPairRow>();
 
         private string _ngReasonText = string.Empty;
@@ -74,6 +76,42 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             }
         }
 
+        private string _redCountText = "0";
+        public string RedCountText
+        {
+            get => _redCountText;
+            private set
+            {
+                if (_redCountText == value) return;
+                _redCountText = value ?? "0";
+                OnPropertyChanged();
+            }
+        }
+
+        private string _yellowCountText = "0";
+        public string YellowCountText
+        {
+            get => _yellowCountText;
+            private set
+            {
+                if (_yellowCountText == value) return;
+                _yellowCountText = value ?? "0";
+                OnPropertyChanged();
+            }
+        }
+
+        private string _blueCountText = "0";
+        public string BlueCountText
+        {
+            get => _blueCountText;
+            private set
+            {
+                if (_blueCountText == value) return;
+                _blueCountText = value ?? "0";
+                OnPropertyChanged();
+            }
+        }
+
         public void SetTargetView(View view)
         {
             var viewName = view == null ? string.Empty : (view.Name ?? string.Empty);
@@ -115,28 +153,68 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         public void SetRebars(IEnumerable<RebarListItem> items)
         {
-            Rebars.Clear();
-            if (items == null) return;
+            ClearRebarGroups();
+            if (items == null)
+            {
+                UpdateGroupCounts();
+                return;
+            }
 
             foreach (var item in BuildOrderedRebarItems(items))
             {
-                Rebars.Add(item);
+                AddToGroup(item);
             }
+
+            UpdateGroupCounts();
         }
 
         private IEnumerable<RebarListItem> BuildOrderedRebarItems(IEnumerable<RebarListItem> items)
         {
-            // 不一致（赤表示）を先頭に並べる
             return items
-                .OrderByDescending(GetMismatchSortKey)
-                .ThenBy(GetSafeDisplayText)
+                .OrderBy(GetSafeDisplayText)
                 .ThenBy(GetSafeRebarIdValue);
         }
 
-        private int GetMismatchSortKey(RebarListItem item)
+        private void ClearRebarGroups()
         {
-            if (item == null) return 0;
-            return item.IsLeaderMismatch ? 1 : 0;
+            RedRebars.Clear();
+            YellowRebars.Clear();
+            BlueRebars.Clear();
+        }
+
+        private void AddToGroup(RebarListItem item)
+        {
+            if (item == null)
+            {
+                return;
+            }
+
+            // 赤：曲げ詳細を取得できて不一致
+            if (item.IsBendingDetailMismatch)
+            {
+                RedRebars.Add(item);
+                return;
+            }
+
+            // 黄：自由端タグの線分を取得できない
+            if (item.IsLeaderLineNotFound)
+            {
+                YellowRebars.Add(item);
+                return;
+            }
+
+            // 青：構造タグなし・曲げ詳細なし（鉄筋のみ）
+            if (item.IsNoTagAndNoBendingDetail)
+            {
+                BlueRebars.Add(item);
+            }
+        }
+
+        private void UpdateGroupCounts()
+        {
+            RedCountText = RedRebars.Count.ToString();
+            YellowCountText = YellowRebars.Count.ToString();
+            BlueCountText = BlueRebars.Count.ToString();
         }
 
         private string GetSafeDisplayText(RebarListItem item)

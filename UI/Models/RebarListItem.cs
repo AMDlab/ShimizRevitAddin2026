@@ -7,25 +7,33 @@ namespace ShimizRevitAddin2026.UI.Models
         public ElementId RebarId { get; }
         public ElementId ViewId { get; }
         public string DisplayText { get; }
-        public bool IsLeaderMismatch { get; }
+        public bool IsBendingDetailMismatch { get; }
+        public bool IsLeaderLineNotFound { get; }
         public bool IsNoTagAndNoBendingDetail { get; }
 
         public RebarListItem(ElementId rebarId, ElementId viewId, string displayText)
-            : this(rebarId, viewId, displayText, false, false)
+            : this(rebarId, viewId, displayText, false, false, false)
         {
         }
 
-        public RebarListItem(ElementId rebarId, ElementId viewId, string displayText, bool isLeaderMismatch)
-            : this(rebarId, viewId, displayText, isLeaderMismatch, false)
+        public RebarListItem(ElementId rebarId, ElementId viewId, string displayText, bool isBendingDetailMismatch, bool isLeaderLineNotFound)
+            : this(rebarId, viewId, displayText, isBendingDetailMismatch, isLeaderLineNotFound, false)
         {
         }
 
-        public RebarListItem(ElementId rebarId, ElementId viewId, string displayText, bool isLeaderMismatch, bool isNoTagAndNoBendingDetail)
+        public RebarListItem(
+            ElementId rebarId,
+            ElementId viewId,
+            string displayText,
+            bool isBendingDetailMismatch,
+            bool isLeaderLineNotFound,
+            bool isNoTagAndNoBendingDetail)
         {
             RebarId = rebarId;
             ViewId = viewId ?? ElementId.InvalidElementId;
             DisplayText = displayText ?? string.Empty;
-            IsLeaderMismatch = isLeaderMismatch;
+            IsBendingDetailMismatch = isBendingDetailMismatch;
+            IsLeaderLineNotFound = isLeaderLineNotFound;
             IsNoTagAndNoBendingDetail = isNoTagAndNoBendingDetail;
         }
 

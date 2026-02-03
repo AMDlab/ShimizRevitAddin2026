@@ -24,7 +24,9 @@ namespace ShimizRevitAddin2026.UI.Windows
         private readonly RebarTagHighlightExternalEventService _externalEventService;
         private readonly RebarTagCheckViewModel _vm;
 
-        private ListBox _rebarListBox;
+        private ListBox _redListBox;
+        private ListBox _yellowListBox;
+        private ListBox _blueListBox;
         private System.Windows.Controls.DataGrid _resultGrid;
 
         public RebarTagCheckWindow(
@@ -258,6 +260,9 @@ namespace ShimizRevitAddin2026.UI.Windows
         private UIElement CreateRebarListCard()
         {
             var card = CreateCard();
+            // 折りたたみ時でも上寄せで表示する
+            card.VerticalContentAlignment = VerticalAlignment.Top;
+            card.HorizontalContentAlignment = HorizontalAlignment.Stretch;
 
             var grid = new System.Windows.Controls.Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -273,51 +278,96 @@ namespace ShimizRevitAddin2026.UI.Windows
             System.Windows.Controls.Grid.SetRow(title, 0);
             grid.Children.Add(title);
 
-            _rebarListBox = new ListBox
+            var body = CreateRebarGroupPanel();
+            var scroll = new ScrollViewer
             {
-                MinHeight = 400,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalContentAlignment = VerticalAlignment.Top,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch
+                Content = body
             };
-            _rebarListBox.ItemContainerStyle = BuildRebarListItemStyle();
-            ScrollViewer.SetVerticalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Auto);
-            ScrollViewer.SetHorizontalScrollBarVisibility(_rebarListBox, ScrollBarVisibility.Disabled);
-            _rebarListBox.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Rebars)));
-            _rebarListBox.SelectionChanged += OnRebarSelectionChanged;
-
-            System.Windows.Controls.Grid.SetRow(_rebarListBox, 1);
-            grid.Children.Add(_rebarListBox);
+            System.Windows.Controls.Grid.SetRow(scroll, 1);
+            grid.Children.Add(scroll);
 
             card.Content = grid;
             return card;
         }
 
-        private Style BuildRebarListItemStyle()
+        private UIElement CreateRebarGroupPanel()
         {
-            // 不一致がある鉄筋を視覚的に強調する
-            var style = new Style(typeof(ListBoxItem));
-            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Black));
-            style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.Normal));
-
-            var noTagNoBendingDetailTrigger = new DataTrigger
+            var panel = new StackPanel
             {
-                Binding = new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsNoTagAndNoBendingDetail)),
-                Value = true
+                VerticalAlignment = VerticalAlignment.Top,
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
-            // 構造タグなし・曲げ詳細なし（鉄筋のみ）を青で表示
-            noTagNoBendingDetailTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Blue));
-            noTagNoBendingDetailTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
-            noTagNoBendingDetailTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(227, 242, 253))));
 
-            var mismatchTrigger = new MultiDataTrigger();
-            mismatchTrigger.Conditions.Add(new Condition(new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsLeaderMismatch)), true));
-            mismatchTrigger.Conditions.Add(new Condition(new System.Windows.Data.Binding(nameof(UI.Models.RebarListItem.IsNoTagAndNoBendingDetail)), false));
-            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Red));
-            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
-            mismatchTrigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 238))));
+            panel.Children.Add(CreateRebarExpander("赤（不一致）", nameof(RebarTagCheckViewModel.RedCountText), out _redListBox, nameof(RebarTagCheckViewModel.RedRebars), Brushes.Red, System.Windows.Media.Color.FromRgb(255, 235, 238)));
+            panel.Children.Add(CreateRebarExpander("黄（線分未取得）", nameof(RebarTagCheckViewModel.YellowCountText), out _yellowListBox, nameof(RebarTagCheckViewModel.YellowRebars), Brushes.DarkGoldenrod, System.Windows.Media.Color.FromRgb(255, 249, 196)));
+            panel.Children.Add(CreateRebarExpander("青（鉄筋のみ）", nameof(RebarTagCheckViewModel.BlueCountText), out _blueListBox, nameof(RebarTagCheckViewModel.BlueRebars), Brushes.Blue, System.Windows.Media.Color.FromRgb(227, 242, 253)));
 
-            style.Triggers.Add(noTagNoBendingDetailTrigger);
-            style.Triggers.Add(mismatchTrigger);
+            return panel;
+        }
+
+        private UIElement CreateRebarExpander(
+            string headerText,
+            string countBindingName,
+            out ListBox listBox,
+            string itemsBindingName,
+            Brush foreground,
+            System.Windows.Media.Color backgroundColor)
+        {
+            var expander = new Expander
+            {
+                IsExpanded = true,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var header = new DockPanel { LastChildFill = true };
+            var title = new System.Windows.Controls.TextBlock
+            {
+                Text = headerText,
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            DockPanel.SetDock(title, Dock.Left);
+
+            var count = new System.Windows.Controls.TextBlock
+            {
+                FontSize = 13,
+                Foreground = Brushes.Gray,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+            count.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(countBindingName));
+
+            header.Children.Add(title);
+            header.Children.Add(count);
+            expander.Header = header;
+
+            listBox = new ListBox
+            {
+                MinHeight = 120,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch
+            };
+            listBox.ItemContainerStyle = BuildFixedColorListItemStyle(foreground, backgroundColor);
+            ScrollViewer.SetVerticalScrollBarVisibility(listBox, ScrollBarVisibility.Auto);
+            ScrollViewer.SetHorizontalScrollBarVisibility(listBox, ScrollBarVisibility.Disabled);
+            listBox.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(itemsBindingName));
+            listBox.SelectionChanged += OnRebarSelectionChanged;
+
+            expander.Content = listBox;
+            return expander;
+        }
+
+        private Style BuildFixedColorListItemStyle(Brush foreground, System.Windows.Media.Color backgroundColor)
+        {
+            var style = new Style(typeof(ListBoxItem));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, foreground));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(backgroundColor)));
             return style;
         }
 
@@ -417,7 +467,15 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             try
             {
-                var item = _rebarListBox?.SelectedItem as RebarListItem;
+                var selected = (sender as ListBox)?.SelectedItem as RebarListItem;
+                if (selected == null)
+                {
+                    return;
+                }
+
+                ClearOtherSelections(sender as ListBox);
+
+                var item = selected;
                 if (item == null)
                 {
                     return;
@@ -439,6 +497,21 @@ namespace ShimizRevitAddin2026.UI.Windows
             catch (Exception ex)
             {
                 TaskDialog.Show("RebarTag", ex.ToString());
+            }
+        }
+
+        private void ClearOtherSelections(ListBox sender)
+        {
+            // 別のリストで選択が残ると混乱するため、選択元以外は解除する
+            try
+            {
+                if (!ReferenceEquals(sender, _redListBox) && _redListBox != null) _redListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _yellowListBox) && _yellowListBox != null) _yellowListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _blueListBox) && _blueListBox != null) _blueListBox.SelectedItem = null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
             }
         }
 

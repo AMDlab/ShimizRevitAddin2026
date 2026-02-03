@@ -101,9 +101,9 @@ namespace ShimizRevitAddin2026.Commands
             bool includeViewNamePrefix)
         {
             var rebars = CollectRebars(doc, view);
-            var mismatchRebarIds = CollectMismatchRebarIds(doc, view, rebars, consistencyService);
+            var (mismatchRebarIds, leaderLineNotFoundRebarIds) = CollectIssueRebarIds(doc, view, rebars, consistencyService);
             var hostRebarIdsWithBendingDetail = CollectHostRebarIdsWithBendingDetail(doc, view, consistencyService);
-            return BuildRebarItems(doc, view, rebars, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix);
+            return BuildRebarItems(doc, view, rebars, mismatchRebarIds, leaderLineNotFoundRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix);
         }
 
         private (ViewSheet sheet, IReadOnlyList<View> views, bool includeViewNamePrefix) ResolveTargetViews(Document doc, View activeView)
@@ -141,6 +141,7 @@ namespace ShimizRevitAddin2026.Commands
             View activeView,
             IReadOnlyList<Rebar> rebars,
             IReadOnlyCollection<ElementId> mismatchRebarIds,
+            IReadOnlyCollection<ElementId> leaderLineNotFoundRebarIds,
             RebarDependentTagCollector dependentTagCollector,
             IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail,
             bool includeViewNamePrefix)
@@ -149,7 +150,7 @@ namespace ShimizRevitAddin2026.Commands
 
             return rebars
                 .Where(r => !ShouldHideRebar(doc, activeView, r, dependentTagCollector, hostRebarIdsWithBendingDetail))
-                .Select(r => BuildRebarListItem(doc, activeView, r, mismatchRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix))
+                .Select(r => BuildRebarListItem(doc, activeView, r, mismatchRebarIds, leaderLineNotFoundRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix))
                 .ToList();
         }
 
@@ -158,22 +159,25 @@ namespace ShimizRevitAddin2026.Commands
             View activeView,
             Rebar rebar,
             IReadOnlyCollection<ElementId> mismatchRebarIds,
+            IReadOnlyCollection<ElementId> leaderLineNotFoundRebarIds,
             RebarDependentTagCollector dependentTagCollector,
             IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail,
             bool includeViewNamePrefix)
         {
             if (rebar == null)
             {
-                return new RebarListItem(ElementId.InvalidElementId, ElementId.InvalidElementId, string.Empty, false, false);
+                return new RebarListItem(ElementId.InvalidElementId, ElementId.InvalidElementId, string.Empty, false, false, false);
             }
 
             var isMismatch = IsMismatchRebar(mismatchRebarIds, rebar.Id);
+            var isLeaderLineNotFound = IsMismatchRebar(leaderLineNotFoundRebarIds, rebar.Id);
             var isNoTagAndNoBendingDetail = IsNoTagAndNoBendingDetail(doc, activeView, rebar, dependentTagCollector, hostRebarIdsWithBendingDetail);
             return new RebarListItem(
                 rebar.Id,
                 activeView?.Id ?? ElementId.InvalidElementId,
                 BuildDisplayText(activeView, rebar, includeViewNamePrefix),
                 isMismatch,
+                isLeaderLineNotFound,
                 isNoTagAndNoBendingDetail);
         }
 
@@ -363,6 +367,28 @@ namespace ShimizRevitAddin2026.Commands
             {
                 Debug.WriteLine(ex);
                 return new List<ElementId>();
+            }
+        }
+
+        private (IReadOnlyCollection<ElementId> mismatchRebarIds, IReadOnlyCollection<ElementId> leaderLineNotFoundRebarIds) CollectIssueRebarIds(
+            Document doc,
+            View activeView,
+            IReadOnlyList<Rebar> rebars,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService)
+        {
+            try
+            {
+                if (doc == null || activeView == null || rebars == null || consistencyService == null)
+                {
+                    return (new List<ElementId>(), new List<ElementId>());
+                }
+
+                return consistencyService.CollectIssueRebarIds(doc, rebars, activeView);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (new List<ElementId>(), new List<ElementId>());
             }
         }
 

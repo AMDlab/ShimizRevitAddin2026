@@ -39,6 +39,22 @@ namespace ShimizRevitAddin2026.Services
             return CollectMismatchRebarIdsInternal(doc, rebars, view, bendingDetails);
         }
 
+        public (IReadOnlyCollection<ElementId> mismatchRebarIds, IReadOnlyCollection<ElementId> leaderLineNotFoundRebarIds) CollectIssueRebarIds(
+            Document doc,
+            IReadOnlyList<Rebar> rebars,
+            View view)
+        {
+            if (doc == null) throw new ArgumentNullException(nameof(doc));
+            if (view == null) throw new ArgumentNullException(nameof(view));
+            if (rebars == null || rebars.Count == 0)
+            {
+                return (new List<ElementId>(), new List<ElementId>());
+            }
+
+            var bendingDetails = CollectBendingDetailElementsInView(doc, view);
+            return CollectIssueRebarIdsInternal(doc, rebars, view, bendingDetails);
+        }
+
         public IReadOnlyCollection<ElementId> CollectHostRebarIdsWithBendingDetail(Document doc, View view)
         {
             if (doc == null) throw new ArgumentNullException(nameof(doc));
@@ -108,6 +124,91 @@ namespace ShimizRevitAddin2026.Services
             }
 
             return result.ToList();
+        }
+
+        private (IReadOnlyCollection<ElementId> mismatchRebarIds, IReadOnlyCollection<ElementId> leaderLineNotFoundRebarIds) CollectIssueRebarIdsInternal(
+            Document doc,
+            IReadOnlyList<Rebar> rebars,
+            View view,
+            IReadOnlyList<Element> bendingDetails)
+        {
+            var mismatch = new HashSet<ElementId>();
+            var leaderLineNotFound = new HashSet<ElementId>();
+
+            foreach (var rebar in rebars)
+            {
+                if (rebar == null)
+                {
+                    continue;
+                }
+
+                var item = BuildResultForRebar(doc, rebar, view, bendingDetails);
+                if (item == null)
+                {
+                    continue;
+                }
+
+                if (IsLeaderLineNotFound(item))
+                {
+                    leaderLineNotFound.Add(rebar.Id);
+                    continue;
+                }
+
+                if (IsBendingDetailMismatch(item))
+                {
+                    mismatch.Add(rebar.Id);
+                }
+            }
+
+            return (mismatch.ToList(), leaderLineNotFound.ToList());
+        }
+
+        private bool IsBendingDetailMismatch(RebarTagLeaderBendingDetailCheckItem item)
+        {
+            // 自由端タグから曲げ詳細を取得でき、かつ曲げ詳細Hostとタグ対象鉄筋が不一致のケースのみを赤対象とする
+            if (item == null || item.IsMatch)
+            {
+                return false;
+            }
+
+            if (item.TaggedRebarId == null || item.TaggedRebarId == ElementId.InvalidElementId)
+            {
+                return false;
+            }
+
+            if (item.PointedBendingDetailId == null || item.PointedBendingDetailId == ElementId.InvalidElementId)
+            {
+                return false;
+            }
+
+            if (item.PointedRebarId == null || item.PointedRebarId == ElementId.InvalidElementId)
+            {
+                return false;
+            }
+
+            return item.PointedRebarId != item.TaggedRebarId;
+        }
+
+        private bool IsLeaderLineNotFound(RebarTagLeaderBendingDetailCheckItem item)
+        {
+            // 自由端タグの線分を取得できない場合は黄色対象とする
+            if (item == null || item.IsMatch)
+            {
+                return false;
+            }
+
+            var msg = item.Message ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(msg))
+            {
+                return false;
+            }
+
+            if (msg.IndexOf("TrySelectFreeEndTagWithLeaderPoints", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return false;
+            }
+
+            return msg.IndexOf("自由端タグの線分を取得できません", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private bool HasAnyMismatch(IReadOnlyList<RebarTagLeaderBendingDetailCheckItem> items)
