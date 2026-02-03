@@ -38,6 +38,30 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             }
         }
 
+        private string _targetSheetText = string.Empty;
+        public string TargetSheetText
+        {
+            get => _targetSheetText;
+            private set
+            {
+                if (_targetSheetText == value) return;
+                _targetSheetText = value ?? string.Empty;
+                OnPropertyChanged();
+            }
+        }
+
+        private string _targetViewsText = string.Empty;
+        public string TargetViewsText
+        {
+            get => _targetViewsText;
+            private set
+            {
+                if (_targetViewsText == value) return;
+                _targetViewsText = value ?? string.Empty;
+                OnPropertyChanged();
+            }
+        }
+
         private string _rebarCountText = string.Empty;
         public string RebarCountText
         {
@@ -52,7 +76,10 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         public void SetTargetView(View view)
         {
-            TargetViewText = view == null ? string.Empty : view.Name;
+            var viewName = view == null ? string.Empty : (view.Name ?? string.Empty);
+            TargetSheetText = string.Empty;
+            TargetViewsText = viewName;
+            TargetViewText = viewName;
         }
 
         public void SetTargetSheetAndViews(ViewSheet sheet, IEnumerable<View> views)
@@ -68,11 +95,15 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
             if (viewNames.Count == 0)
             {
+                TargetSheetText = sheetName;
+                TargetViewsText = string.Empty;
                 TargetViewText = sheetName;
                 return;
             }
 
             var joined = string.Join(" / ", viewNames);
+            TargetSheetText = sheetName;
+            TargetViewsText = joined;
             TargetViewText = string.IsNullOrWhiteSpace(sheetName) ? joined : $"{sheetName}  {joined}";
         }
 

@@ -144,29 +144,8 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             var root = new StackPanel { Margin = new Thickness(16, 12, 16, 8) };
 
-            var panel = new DockPanel { LastChildFill = true };
-            var label = new System.Windows.Controls.TextBlock
-            {
-                Text = "対象：",
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 16,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            DockPanel.SetDock(label, Dock.Left);
-
-            var value = new System.Windows.Controls.TextBlock
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 16,
-                FontWeight = FontWeights.SemiBold,
-                TextWrapping = TextWrapping.Wrap
-            };
-            value.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.TargetViewText)));
-
-            panel.Children.Add(label);
-            panel.Children.Add(value);
-
-            root.Children.Add(panel);
+            root.Children.Add(CreateTargetSheetRow());
+            root.Children.Add(CreateTargetViewRow());
 
             var countPanel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 0) };
             var countLabel = new System.Windows.Controls.TextBlock
@@ -192,6 +171,58 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             System.Windows.Controls.Grid.SetRow(root, 0);
             return root;
+        }
+
+        private UIElement CreateTargetSheetRow()
+        {
+            var panel = new DockPanel { LastChildFill = true };
+            var label = new System.Windows.Controls.TextBlock
+            {
+                Text = "対象シート：",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 16,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            DockPanel.SetDock(label, Dock.Left);
+
+            var value = new System.Windows.Controls.TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 18,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            };
+            value.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.TargetSheetText)));
+
+            panel.Children.Add(label);
+            panel.Children.Add(value);
+            return panel;
+        }
+
+        private UIElement CreateTargetViewRow()
+        {
+            var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 4, 0, 0) };
+            var label = new System.Windows.Controls.TextBlock
+            {
+                Text = "対象ビュー：",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            DockPanel.SetDock(label, Dock.Left);
+
+            var value = new System.Windows.Controls.TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                FontWeight = FontWeights.Normal,
+                TextWrapping = TextWrapping.Wrap
+            };
+            value.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.TargetViewsText)));
+
+            panel.Children.Add(label);
+            panel.Children.Add(value);
+            return panel;
         }
 
         private UIElement CreateBody()
