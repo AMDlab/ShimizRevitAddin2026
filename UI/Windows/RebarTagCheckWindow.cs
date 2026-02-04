@@ -27,6 +27,7 @@ namespace ShimizRevitAddin2026.UI.Windows
         private ListBox _redListBox;
         private ListBox _yellowListBox;
         private ListBox _blueListBox;
+        private ListBox _blackListBox;
         private System.Windows.Controls.DataGrid _resultGrid;
 
         public RebarTagCheckWindow(
@@ -324,9 +325,10 @@ namespace ShimizRevitAddin2026.UI.Windows
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            panel.Children.Add(CreateRebarExpander("赤（不一致）", nameof(RebarTagCheckViewModel.RedCountText), out _redListBox, nameof(RebarTagCheckViewModel.RedRebars), Brushes.Red, System.Windows.Media.Color.FromRgb(255, 235, 238)));
-            panel.Children.Add(CreateRebarExpander("黄（線分未取得）", nameof(RebarTagCheckViewModel.YellowCountText), out _yellowListBox, nameof(RebarTagCheckViewModel.YellowRebars), Brushes.DarkGoldenrod, System.Windows.Media.Color.FromRgb(255, 249, 196)));
-            panel.Children.Add(CreateRebarExpander("青（鉄筋のみ）", nameof(RebarTagCheckViewModel.BlueCountText), out _blueListBox, nameof(RebarTagCheckViewModel.BlueRebars), Brushes.Blue, System.Windows.Media.Color.FromRgb(227, 242, 253)));
+            panel.Children.Add(CreateRebarExpander("HOST不一致", nameof(RebarTagCheckViewModel.RedCountText), out _redListBox, nameof(RebarTagCheckViewModel.RedRebars), Brushes.Red, System.Windows.Media.Color.FromRgb(255, 235, 238)));
+            panel.Children.Add(CreateRebarExpander("自由端タグ線分未取得", nameof(RebarTagCheckViewModel.YellowCountText), out _yellowListBox, nameof(RebarTagCheckViewModel.YellowRebars), Brushes.DarkGoldenrod, System.Windows.Media.Color.FromRgb(255, 249, 196)));
+            panel.Children.Add(CreateRebarExpander("構造タグなし・曲げ詳細なし", nameof(RebarTagCheckViewModel.BlueCountText), out _blueListBox, nameof(RebarTagCheckViewModel.BlueRebars), Brushes.Blue, System.Windows.Media.Color.FromRgb(227, 242, 253)));
+            panel.Children.Add(CreateRebarExpander("一致", nameof(RebarTagCheckViewModel.BlackCountText), out _blackListBox, nameof(RebarTagCheckViewModel.BlackRebars), Brushes.Black, System.Windows.Media.Color.FromRgb(245, 245, 245)));
 
             return panel;
         }
@@ -530,6 +532,7 @@ namespace ShimizRevitAddin2026.UI.Windows
                 if (!ReferenceEquals(sender, _redListBox) && _redListBox != null) _redListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _yellowListBox) && _yellowListBox != null) _yellowListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _blueListBox) && _blueListBox != null) _blueListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _blackListBox) && _blackListBox != null) _blackListBox.SelectedItem = null;
             }
             catch (Exception ex)
             {

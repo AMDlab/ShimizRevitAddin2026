@@ -14,6 +14,7 @@ namespace ShimizRevitAddin2026.UI.ViewModels
         public ObservableCollection<RebarListItem> RedRebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarListItem> YellowRebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarListItem> BlueRebars { get; } = new ObservableCollection<RebarListItem>();
+        public ObservableCollection<RebarListItem> BlackRebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarTagPairRow> Rows { get; } = new ObservableCollection<RebarTagPairRow>();
 
         private string _ngReasonText = string.Empty;
@@ -108,6 +109,18 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             {
                 if (_blueCountText == value) return;
                 _blueCountText = value ?? "0";
+                OnPropertyChanged();
+            }
+        }
+
+        private string _blackCountText = "0";
+        public string BlackCountText
+        {
+            get => _blackCountText;
+            private set
+            {
+                if (_blackCountText == value) return;
+                _blackCountText = value ?? "0";
                 OnPropertyChanged();
             }
         }
@@ -246,6 +259,7 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             RedRebars.Clear();
             YellowRebars.Clear();
             BlueRebars.Clear();
+            BlackRebars.Clear();
         }
 
         private void AddToGroup(RebarListItem item)
@@ -273,7 +287,11 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             if (item.IsNoTagAndNoBendingDetail)
             {
                 BlueRebars.Add(item);
+                return;
             }
+
+            // 黒：上記以外（一致など）
+            BlackRebars.Add(item);
         }
 
         private void UpdateGroupCounts()
@@ -281,6 +299,7 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             RedCountText = RedRebars.Count.ToString();
             YellowCountText = YellowRebars.Count.ToString();
             BlueCountText = BlueRebars.Count.ToString();
+            BlackCountText = BlackRebars.Count.ToString();
         }
 
         private string GetSafeDisplayText(RebarListItem item)
