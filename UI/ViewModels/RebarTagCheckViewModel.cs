@@ -145,6 +145,72 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             TargetViewText = string.IsNullOrWhiteSpace(sheetName) ? joined : $"{sheetName}  {joined}";
         }
 
+        public void SetTargetSheetsAndViewCount(IReadOnlyList<ViewSheet> sheets, int viewCount)
+        {
+            // 複数シート対象時の表示（長くなりすぎないように件数を主に出す）
+            var sheetCount = sheets == null ? 0 : sheets.Count;
+            var sheetSummary = BuildSheetSummaryText(sheets, 3);
+
+            TargetSheetText = string.IsNullOrWhiteSpace(sheetSummary) ? $"シート数：{sheetCount}" : $"{sheetSummary}（{sheetCount}）";
+            TargetViewsText = viewCount < 0 ? "ビュー数：0" : $"ビュー数：{viewCount}";
+            TargetViewText = $"{TargetSheetText}  {TargetViewsText}";
+        }
+
+        private string BuildSheetSummaryText(IReadOnlyList<ViewSheet> sheets, int maxCount)
+        {
+            if (sheets == null || sheets.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            if (maxCount < 1)
+            {
+                maxCount = 1;
+            }
+
+            var names = sheets
+                .Where(s => s != null)
+                .Take(maxCount)
+                .Select(BuildSheetDisplayText)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+
+            if (names.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var joined = string.Join(" / ", names);
+            if (sheets.Count <= maxCount)
+            {
+                return joined;
+            }
+
+            return $"{joined} / ...";
+        }
+
+        private string BuildSheetDisplayText(ViewSheet sheet)
+        {
+            if (sheet == null)
+            {
+                return string.Empty;
+            }
+
+            var no = sheet.SheetNumber ?? string.Empty;
+            var name = sheet.Name ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(no))
+            {
+                return name;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return no;
+            }
+
+            return $"{no} {name}";
+        }
+
         public void SetRebarCount(int count)
         {
             if (count < 0) count = 0;

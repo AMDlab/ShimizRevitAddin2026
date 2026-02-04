@@ -17,6 +17,7 @@ namespace ShimizRevitAddin2026.Commands
     internal class OpenRebarTagCheckWindowCommand : IExternalCommand
     {
         private const string BendingDetailTagName = "曲げ加工詳細";
+        private const string TargetSheetNameToken = "配筋図";
         private static readonly RebarTagCheckWindowStore _windowStore = new RebarTagCheckWindowStore();
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
@@ -36,13 +37,21 @@ namespace ShimizRevitAddin2026.Commands
                 var dependentTagCollector = BuildDependentTagCollector();
                 var consistencyService = BuildConsistencyService(dependentTagCollector);
 
-                var (sheet, targetViews, includeViewNamePrefix) = ResolveTargetViews(doc, activeView);
-                var items = CollectRebarItemsForViews(doc, targetViews, dependentTagCollector, consistencyService, includeViewNamePrefix);
+                var sheets = CollectTargetSheets(doc);
+                if (sheets.Count == 0)
+                {
+                    TaskDialog.Show("RebarTag", $"[{TargetSheetNameToken}] を含むシートが見つかりません。");
+                    return Result.Cancelled;
+                }
+
+                var targets = BuildTargetsForSheets(doc, sheets);
+                var items = CollectRebarItemsForTargets(doc, targets, dependentTagCollector, consistencyService);
                 var rebarCount = GetRebarCount(items);
 
                 var highlighter = BuildHighlighter(dependentTagCollector);
                 var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
-                var window = BuildWindow(uidoc, activeView, sheet, targetViews, externalEventService, items, rebarCount);
+                var viewCount = CountViews(targets);
+                var window = BuildWindow(uidoc, activeView, sheets, viewCount, externalEventService, items, rebarCount);
                 SetOwner(uiapp, window);
 
                 _windowStore.SetCurrent(window);
@@ -87,7 +96,34 @@ namespace ShimizRevitAddin2026.Commands
                     continue;
                 }
 
-                result.AddRange(CollectRebarItemsForSingleView(doc, view, dependentTagCollector, consistencyService, includeViewNamePrefix));
+                var prefix = includeViewNamePrefix ? (view.Name ?? string.Empty) : string.Empty;
+                result.AddRange(CollectRebarItemsForSingleView(doc, view, dependentTagCollector, consistencyService, prefix));
+            }
+
+            return result;
+        }
+
+        private IReadOnlyList<RebarListItem> CollectRebarItemsForTargets(
+            Document doc,
+            IReadOnlyList<SheetViewTarget> targets,
+            RebarDependentTagCollector dependentTagCollector,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService)
+        {
+            if (targets == null || targets.Count == 0)
+            {
+                return new List<RebarListItem>();
+            }
+
+            var result = new List<RebarListItem>();
+            foreach (var t in targets)
+            {
+                if (t == null || t.View == null)
+                {
+                    continue;
+                }
+
+                var prefix = BuildSheetViewPrefix(t.Sheet, t.View);
+                result.AddRange(CollectRebarItemsForSingleView(doc, t.View, dependentTagCollector, consistencyService, prefix));
             }
 
             return result;
@@ -98,42 +134,29 @@ namespace ShimizRevitAddin2026.Commands
             View view,
             RebarDependentTagCollector dependentTagCollector,
             RebarTagLeaderBendingDetailConsistencyService consistencyService,
-            bool includeViewNamePrefix)
+            string displayPrefix)
         {
             var rebars = CollectRebars(doc, view);
             var (mismatchRebarIds, leaderLineNotFoundRebarIds) = CollectIssueRebarIds(doc, view, rebars, consistencyService);
             var hostRebarIdsWithBendingDetail = CollectHostRebarIdsWithBendingDetail(doc, view, consistencyService);
-            return BuildRebarItems(doc, view, rebars, mismatchRebarIds, leaderLineNotFoundRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix);
-        }
-
-        private (ViewSheet sheet, IReadOnlyList<View> views, bool includeViewNamePrefix) ResolveTargetViews(Document doc, View activeView)
-        {
-            var sheet = activeView as ViewSheet;
-            if (sheet == null)
-            {
-                return (null, new List<View> { activeView }, false);
-            }
-
-            var collector = new SheetPlacedViewCollector();
-            var views = collector.Collect(doc, sheet);
-            return (sheet, views, true);
+            return BuildRebarItems(doc, view, rebars, mismatchRebarIds, leaderLineNotFoundRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, displayPrefix);
         }
 
         private RebarTagCheckWindow BuildWindow(
             UIDocument uidoc,
             View activeView,
-            ViewSheet sheet,
-            IReadOnlyList<View> targetViews,
+            IReadOnlyList<ViewSheet> sheets,
+            int viewCount,
             RebarTagHighlightExternalEventService externalEventService,
             IReadOnlyList<RebarListItem> items,
             int rebarCount)
         {
-            if (sheet == null)
+            if (sheets == null || sheets.Count == 0)
             {
                 return new RebarTagCheckWindow(uidoc, activeView, externalEventService, items, rebarCount);
             }
 
-            return new RebarTagCheckWindow(uidoc, sheet, targetViews ?? new List<View>(), externalEventService, items, rebarCount);
+            return new RebarTagCheckWindow(uidoc, sheets, viewCount, externalEventService, items, rebarCount);
         }
 
         private IReadOnlyList<RebarListItem> BuildRebarItems(
@@ -144,13 +167,13 @@ namespace ShimizRevitAddin2026.Commands
             IReadOnlyCollection<ElementId> leaderLineNotFoundRebarIds,
             RebarDependentTagCollector dependentTagCollector,
             IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail,
-            bool includeViewNamePrefix)
+            string displayPrefix)
         {
             if (rebars == null) return new List<RebarListItem>();
 
             return rebars
                 .Where(r => !ShouldHideRebar(doc, activeView, r, dependentTagCollector, hostRebarIdsWithBendingDetail))
-                .Select(r => BuildRebarListItem(doc, activeView, r, mismatchRebarIds, leaderLineNotFoundRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, includeViewNamePrefix))
+                .Select(r => BuildRebarListItem(doc, activeView, r, mismatchRebarIds, leaderLineNotFoundRebarIds, dependentTagCollector, hostRebarIdsWithBendingDetail, displayPrefix))
                 .ToList();
         }
 
@@ -162,7 +185,7 @@ namespace ShimizRevitAddin2026.Commands
             IReadOnlyCollection<ElementId> leaderLineNotFoundRebarIds,
             RebarDependentTagCollector dependentTagCollector,
             IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail,
-            bool includeViewNamePrefix)
+            string displayPrefix)
         {
             if (rebar == null)
             {
@@ -175,7 +198,7 @@ namespace ShimizRevitAddin2026.Commands
             return new RebarListItem(
                 rebar.Id,
                 activeView?.Id ?? ElementId.InvalidElementId,
-                BuildDisplayText(activeView, rebar, includeViewNamePrefix),
+                BuildDisplayText(displayPrefix, rebar),
                 isMismatch,
                 isLeaderLineNotFound,
                 isNoTagAndNoBendingDetail);
@@ -288,7 +311,7 @@ namespace ShimizRevitAddin2026.Commands
             return items == null ? 0 : items.Count;
         }
 
-        private string BuildDisplayText(View view, Rebar rebar, bool includeViewNamePrefix)
+        private string BuildDisplayText(string displayPrefix, Rebar rebar)
         {
             if (rebar == null) return string.Empty;
 
@@ -297,18 +320,144 @@ namespace ShimizRevitAddin2026.Commands
                 ? $"ID: {rebar.Id.Value}"
                 : $"{typeName} / ID: {rebar.Id.Value}";
 
-            if (!includeViewNamePrefix)
+            if (string.IsNullOrWhiteSpace(displayPrefix))
             {
                 return baseText;
             }
 
+            return $"{displayPrefix} / {baseText}";
+        }
+
+        private IReadOnlyList<ViewSheet> CollectTargetSheets(Document doc)
+        {
+            // シート名にトークンが含まれるシートを対象にする
+            if (doc == null)
+            {
+                return new List<ViewSheet>();
+            }
+
+            try
+            {
+                return new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewSheet))
+                    .Cast<ViewSheet>()
+                    .Where(s => s != null && !s.IsTemplate && IsTargetSheetName(s.Name))
+                    .OrderBy(s => s.SheetNumber ?? string.Empty)
+                    .ThenBy(s => s.Name ?? string.Empty)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new List<ViewSheet>();
+            }
+        }
+
+        private bool IsTargetSheetName(string sheetName)
+        {
+            if (string.IsNullOrWhiteSpace(sheetName))
+            {
+                return false;
+            }
+
+            return sheetName.Contains(TargetSheetNameToken);
+        }
+
+        private IReadOnlyList<SheetViewTarget> BuildTargetsForSheets(Document doc, IReadOnlyList<ViewSheet> sheets)
+        {
+            if (doc == null || sheets == null || sheets.Count == 0)
+            {
+                return new List<SheetViewTarget>();
+            }
+
+            var collector = new SheetPlacedViewCollector();
+            var result = new List<SheetViewTarget>();
+            foreach (var sheet in sheets)
+            {
+                if (sheet == null)
+                {
+                    continue;
+                }
+
+                var views = collector.Collect(doc, sheet);
+                foreach (var v in views)
+                {
+                    if (v == null)
+                    {
+                        continue;
+                    }
+
+                    result.Add(new SheetViewTarget(sheet, v));
+                }
+            }
+
+            return result;
+        }
+
+        private int CountViews(IReadOnlyList<SheetViewTarget> targets)
+        {
+            if (targets == null || targets.Count == 0)
+            {
+                return 0;
+            }
+
+            return targets
+                .Where(t => t != null && t.View != null && t.View.Id != null && t.View.Id != ElementId.InvalidElementId)
+                .Select(t => t.View.Id)
+                .Distinct()
+                .Count();
+        }
+
+        private string BuildSheetViewPrefix(ViewSheet sheet, View view)
+        {
+            var sheetText = BuildSheetDisplayText(sheet);
             var viewName = view == null ? string.Empty : (view.Name ?? string.Empty);
+
+            if (string.IsNullOrWhiteSpace(sheetText))
+            {
+                return viewName ?? string.Empty;
+            }
+
             if (string.IsNullOrWhiteSpace(viewName))
             {
-                return baseText;
+                return sheetText;
             }
 
-            return $"{viewName} / {baseText}";
+            return $"{sheetText} / {viewName}";
+        }
+
+        private string BuildSheetDisplayText(ViewSheet sheet)
+        {
+            if (sheet == null)
+            {
+                return string.Empty;
+            }
+
+            var no = sheet.SheetNumber ?? string.Empty;
+            var name = sheet.Name ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(no))
+            {
+                return name;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return no;
+            }
+
+            return $"{no} {name}";
+        }
+
+        private class SheetViewTarget
+        {
+            public ViewSheet Sheet { get; }
+            public View View { get; }
+
+            public SheetViewTarget(ViewSheet sheet, View view)
+            {
+                Sheet = sheet;
+                View = view;
+            }
         }
 
         private string GetTypeName(Rebar rebar)

@@ -72,6 +72,28 @@ namespace ShimizRevitAddin2026.UI.Windows
             BuildLayout();
         }
 
+        public RebarTagCheckWindow(
+            UIDocument uidoc,
+            IReadOnlyList<ViewSheet> sheets,
+            int viewCount,
+            RebarTagHighlightExternalEventService externalEventService,
+            IReadOnlyList<RebarListItem> rebars,
+            int rebarCount)
+        {
+            _uidoc = uidoc;
+            _externalEventService = externalEventService;
+
+            _vm = new RebarTagCheckViewModel();
+            _vm.SetTargetSheetsAndViewCount(sheets, viewCount);
+            _vm.SetRebars(rebars);
+            _vm.SetRebarCount(rebarCount);
+
+            DataContext = _vm;
+            InitializeWindow();
+            ApplyWpfUiResources();
+            BuildLayout();
+        }
+
         private void InitializeWindow()
         {
             Title = "検証結果";
