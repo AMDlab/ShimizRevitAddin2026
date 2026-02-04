@@ -37,26 +37,21 @@ namespace ShimizRevitAddin2026.Commands
                 var dependentTagCollector = BuildDependentTagCollector();
                 var consistencyService = BuildConsistencyService(dependentTagCollector);
 
-                var sheets = CollectTargetSheets(doc);
-                if (sheets.Count == 0)
+                var highlighter = BuildHighlighter(dependentTagCollector);
+                var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
+
+                var scope = SelectTargetScope();
+                if (scope == TargetScope.Cancelled)
                 {
-                    TaskDialog.Show("RebarTag", $"[{TargetSheetNameToken}] を含むシートが見つかりません。");
                     return Result.Cancelled;
                 }
 
-                var targets = BuildTargetsForSheets(doc, sheets);
-                var items = CollectRebarItemsForTargets(doc, targets, dependentTagCollector, consistencyService);
-                var rebarCount = GetRebarCount(items);
+                if (scope == TargetScope.ActiveContext)
+                {
+                    return ExecuteForActiveContext(uidoc, uiapp, doc, activeView, dependentTagCollector, consistencyService, externalEventService);
+                }
 
-                var highlighter = BuildHighlighter(dependentTagCollector);
-                var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
-                var viewCount = CountViews(targets);
-                var window = BuildWindow(uidoc, activeView, sheets, viewCount, externalEventService, items, rebarCount);
-                SetOwner(uiapp, window);
-
-                _windowStore.SetCurrent(window);
-                window.Show();
-                return Result.Succeeded;
+                return ExecuteForAllTargetSheets(uidoc, uiapp, doc, activeView, dependentTagCollector, consistencyService, externalEventService);
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
             {
@@ -68,6 +63,120 @@ namespace ShimizRevitAddin2026.Commands
                 message = ex.Message;
                 return Result.Failed;
             }
+        }
+
+        private Result ExecuteForActiveContext(
+            UIDocument uidoc,
+            UIApplication uiapp,
+            Document doc,
+            View activeView,
+            RebarDependentTagCollector dependentTagCollector,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService,
+            RebarTagHighlightExternalEventService externalEventService)
+        {
+            if (uidoc == null || uiapp == null || doc == null || activeView == null)
+            {
+                return Result.Cancelled;
+            }
+
+            var sheet = activeView as ViewSheet;
+            if (sheet != null)
+            {
+                var placedViews = CollectPlacedViews(doc, sheet);
+                var targets = BuildTargetsForSheets(doc, new List<ViewSheet> { sheet });
+                var items = CollectRebarItemsForTargets(doc, targets, dependentTagCollector, consistencyService);
+                var rebarCount = GetRebarCount(items);
+
+                var window = new RebarTagCheckWindow(uidoc, sheet, placedViews, externalEventService, items, rebarCount);
+                SetOwner(uiapp, window);
+                _windowStore.SetCurrent(window);
+                window.Show();
+                return Result.Succeeded;
+            }
+
+            var viewItems = CollectRebarItemsForSingleView(doc, activeView, dependentTagCollector, consistencyService, string.Empty);
+            var viewRebarCount = GetRebarCount(viewItems);
+            var singleWindow = new RebarTagCheckWindow(uidoc, activeView, externalEventService, viewItems, viewRebarCount);
+            SetOwner(uiapp, singleWindow);
+            _windowStore.SetCurrent(singleWindow);
+            singleWindow.Show();
+            return Result.Succeeded;
+        }
+
+        private Result ExecuteForAllTargetSheets(
+            UIDocument uidoc,
+            UIApplication uiapp,
+            Document doc,
+            View activeView,
+            RebarDependentTagCollector dependentTagCollector,
+            RebarTagLeaderBendingDetailConsistencyService consistencyService,
+            RebarTagHighlightExternalEventService externalEventService)
+        {
+            var sheets = CollectTargetSheets(doc);
+            if (sheets.Count == 0)
+            {
+                TaskDialog.Show("RebarTag", $"[{TargetSheetNameToken}] を含むシートが見つかりません。");
+                return Result.Cancelled;
+            }
+
+            var targets = BuildTargetsForSheets(doc, sheets);
+            var items = CollectRebarItemsForTargets(doc, targets, dependentTagCollector, consistencyService);
+            var rebarCount = GetRebarCount(items);
+
+            var viewCount = CountViews(targets);
+            var window = BuildWindow(uidoc, activeView, sheets, viewCount, externalEventService, items, rebarCount);
+            SetOwner(uiapp, window);
+            _windowStore.SetCurrent(window);
+            window.Show();
+            return Result.Succeeded;
+        }
+
+        private IReadOnlyList<View> CollectPlacedViews(Document doc, ViewSheet sheet)
+        {
+            try
+            {
+                var collector = new SheetPlacedViewCollector();
+                return collector.Collect(doc, sheet);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new List<View>();
+            }
+        }
+
+        private TargetScope SelectTargetScope()
+        {
+            // 実行時に対象範囲を選択する
+            var td = new TaskDialog("RebarTag")
+            {
+                MainInstruction = "対象範囲を選択してください。",
+                MainContent = "現在のビュー、またはシート名に[配筋図]を含む全シートを対象に検証します。",
+                CommonButtons = TaskDialogCommonButtons.Cancel
+            };
+
+            td.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "現在のビュー（Sheetの場合はそのSheetに配置されたビュー）");
+            td.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, $"全シート（シート名に{TargetSheetNameToken}を含む）");
+
+            var r = td.Show();
+            if (r == TaskDialogResult.CommandLink1)
+            {
+                return TargetScope.ActiveContext;
+            }
+
+            if (r == TaskDialogResult.CommandLink2)
+            {
+                return TargetScope.AllTargetSheets;
+            }
+
+            return TargetScope.Cancelled;
+        }
+
+        private enum TargetScope
+        {
+            Cancelled = 0,
+            ActiveContext = 1,
+            AllTargetSheets = 2,
         }
 
         private IReadOnlyList<Rebar> CollectRebars(Document doc, View activeView)
