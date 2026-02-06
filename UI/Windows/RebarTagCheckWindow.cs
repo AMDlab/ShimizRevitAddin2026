@@ -24,6 +24,8 @@ namespace ShimizRevitAddin2026.UI.Windows
         private readonly RebarTagHighlightExternalEventService _externalEventService;
         private readonly RebarTagCheckViewModel _vm;
 
+        private readonly double _leftColumnWidth = 360;
+
         private ListBox _redListBox;
         private ListBox _yellowListBox;
         private ListBox _blueListBox;
@@ -202,7 +204,13 @@ namespace ShimizRevitAddin2026.UI.Windows
 
         private UIElement CreateKeywordRow()
         {
-            var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 0) };
+            var panel = new DockPanel
+            {
+                LastChildFill = true,
+                Margin = new Thickness(0, 6, 0, 0),
+                Width = _leftColumnWidth,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
 
             var label = new System.Windows.Controls.TextBlock
             {
@@ -215,7 +223,6 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             var box = new System.Windows.Controls.TextBox
             {
-                MinWidth = 260,
                 Height = 28,
                 VerticalContentAlignment = VerticalAlignment.Center
             };
@@ -284,7 +291,7 @@ namespace ShimizRevitAddin2026.UI.Windows
         private UIElement CreateBody()
         {
             var grid = new System.Windows.Controls.Grid { Margin = new Thickness(16, 8, 16, 16) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_leftColumnWidth) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
