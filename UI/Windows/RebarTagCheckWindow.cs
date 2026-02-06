@@ -194,8 +194,39 @@ namespace ShimizRevitAddin2026.UI.Windows
             countPanel.Children.Add(countValue);
             root.Children.Add(countPanel);
 
+            root.Children.Add(CreateKeywordRow());
+
             System.Windows.Controls.Grid.SetRow(root, 0);
             return root;
+        }
+
+        private UIElement CreateKeywordRow()
+        {
+            var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 6, 0, 0) };
+
+            var label = new System.Windows.Controls.TextBlock
+            {
+                Text = "Keyword：",
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            DockPanel.SetDock(label, Dock.Left);
+
+            var box = new System.Windows.Controls.TextBox
+            {
+                MinWidth = 260,
+                Height = 28,
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            box.SetBinding(System.Windows.Controls.TextBox.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Keyword))
+            {
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            });
+
+            panel.Children.Add(label);
+            panel.Children.Add(box);
+            return panel;
         }
 
         private UIElement CreateTargetSheetRow()

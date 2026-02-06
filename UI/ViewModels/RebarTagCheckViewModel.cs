@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System;
 using System.Runtime.CompilerServices;
 using Autodesk.Revit.DB;
 using ShimizRevitAddin2026.Model;
@@ -16,6 +17,21 @@ namespace ShimizRevitAddin2026.UI.ViewModels
         public ObservableCollection<RebarListItem> BlueRebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarListItem> BlackRebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarTagPairRow> Rows { get; } = new ObservableCollection<RebarTagPairRow>();
+
+        private List<RebarListItem> _allRebars = new List<RebarListItem>();
+
+        private string _keyword = string.Empty;
+        public string Keyword
+        {
+            get => _keyword;
+            set
+            {
+                if (_keyword == value) return;
+                _keyword = value ?? string.Empty;
+                OnPropertyChanged();
+                ApplyKeywordFilterToGroups();
+            }
+        }
 
         private string _ngReasonText = string.Empty;
         public string NgReasonText
@@ -232,19 +248,50 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         public void SetRebars(IEnumerable<RebarListItem> items)
         {
-            ClearRebarGroups();
-            if (items == null)
-            {
-                UpdateGroupCounts();
-                return;
-            }
+            _allRebars = items == null
+                ? new List<RebarListItem>()
+                : items.Where(x => x != null).ToList();
 
-            foreach (var item in BuildOrderedRebarItems(items))
+            ApplyKeywordFilterToGroups();
+        }
+
+        private void ApplyKeywordFilterToGroups()
+        {
+            ClearRebarGroups();
+
+            foreach (var item in BuildOrderedRebarItems(FilterByKeyword(_allRebars, _keyword)))
             {
                 AddToGroup(item);
             }
 
             UpdateGroupCounts();
+        }
+
+        private IEnumerable<RebarListItem> FilterByKeyword(IEnumerable<RebarListItem> items, string keyword)
+        {
+            if (items == null)
+            {
+                return new List<RebarListItem>();
+            }
+
+            var k = (keyword ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(k))
+            {
+                return items;
+            }
+
+            return items.Where(i => ContainsKeyword(i?.DisplayText, k));
+        }
+
+        private bool ContainsKeyword(string text, string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return true;
+            }
+
+            var t = text ?? string.Empty;
+            return t.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private IEnumerable<RebarListItem> BuildOrderedRebarItems(IEnumerable<RebarListItem> items)
