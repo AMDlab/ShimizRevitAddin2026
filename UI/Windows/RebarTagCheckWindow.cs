@@ -239,12 +239,20 @@ namespace ShimizRevitAddin2026.UI.Windows
 
         private UIElement CreateKeywordAndActionRow()
         {
-            // Keyword入力欄の右側に実行/リセットを配置する
-            var grid = new System.Windows.Controls.Grid
+            // Keywordの幅を左カラムに合わせ、右側にボタンを寄せて配置する
+            var outer = new System.Windows.Controls.Grid
             {
                 Margin = new Thickness(0, 6, 0, 0),
-                HorizontalAlignment = HorizontalAlignment.Stretch
+                HorizontalAlignment = HorizontalAlignment.Left
             };
+
+            var keywordGrid = new System.Windows.Controls.Grid
+            {
+                Width = _leftColumnWidth,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            keywordGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            keywordGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var label = new System.Windows.Controls.TextBlock
             {
@@ -267,12 +275,15 @@ namespace ShimizRevitAddin2026.UI.Windows
             });
             System.Windows.Controls.Grid.SetColumn(box, 1);
 
+            keywordGrid.Children.Add(label);
+            keywordGrid.Children.Add(box);
+
             var buttons = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right
+                Margin = new Thickness(12, 0, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left
             };
-            System.Windows.Controls.Grid.SetColumn(buttons, 2);
 
             var execute = new System.Windows.Controls.Button
             {
@@ -296,15 +307,15 @@ namespace ShimizRevitAddin2026.UI.Windows
             buttons.Children.Add(execute);
             buttons.Children.Add(reset);
 
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            outer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            outer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            grid.Children.Add(label);
-            grid.Children.Add(box);
-            grid.Children.Add(buttons);
+            System.Windows.Controls.Grid.SetColumn(keywordGrid, 0);
+            System.Windows.Controls.Grid.SetColumn(buttons, 1);
+            outer.Children.Add(keywordGrid);
+            outer.Children.Add(buttons);
 
-            return grid;
+            return outer;
         }
 
         private UIElement CreateTargetSheetRow()
