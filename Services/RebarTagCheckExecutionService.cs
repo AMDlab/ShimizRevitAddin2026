@@ -422,7 +422,7 @@ namespace ShimizRevitAddin2026.Services
 
         private IReadOnlyList<ViewSheet> CollectTargetSheetsByToken(Document doc, string token)
         {
-            // シート名にトークンが含まれるシートを対象にする
+            // シート番号/シート名にトークンが含まれるシートを対象にする
             if (doc == null)
             {
                 return new List<ViewSheet>();
@@ -433,7 +433,7 @@ namespace ShimizRevitAddin2026.Services
                 return new FilteredElementCollector(doc)
                     .OfClass(typeof(ViewSheet))
                     .Cast<ViewSheet>()
-                    .Where(s => s != null && !s.IsTemplate && IsTargetSheetName(s.Name, token))
+                    .Where(s => s != null && !s.IsTemplate && IsTargetSheet(s, token))
                     .OrderBy(s => s.SheetNumber ?? string.Empty)
                     .ThenBy(s => s.Name ?? string.Empty)
                     .ToList();
@@ -445,9 +445,9 @@ namespace ShimizRevitAddin2026.Services
             }
         }
 
-        private bool IsTargetSheetName(string sheetName, string token)
+        private bool IsTargetSheet(ViewSheet sheet, string token)
         {
-            if (string.IsNullOrWhiteSpace(sheetName))
+            if (sheet == null)
             {
                 return false;
             }
@@ -457,7 +457,25 @@ namespace ShimizRevitAddin2026.Services
                 return false;
             }
 
-            return sheetName.Contains(token);
+            // 数字検索（例: 3001）は SheetNumber に入っていることが多いので両方を見る
+            var sheetNo = sheet.SheetNumber ?? string.Empty;
+            var sheetName = sheet.Name ?? string.Empty;
+            return ContainsToken(sheetNo, token) || ContainsToken(sheetName, token);
+        }
+
+        private bool ContainsToken(string text, string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            return text.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private IReadOnlyList<SheetViewTarget> BuildTargetsForSheets(Document doc, IReadOnlyList<ViewSheet> sheets)
