@@ -22,15 +22,44 @@ namespace ShimizRevitAddin2026.UI.Windows
     {
         private readonly UIDocument _uidoc;
         private readonly RebarTagHighlightExternalEventService _externalEventService;
+        private readonly RebarTagCheckExecuteExternalEventService _checkExecuteExternalEventService;
         private readonly RebarTagCheckViewModel _vm;
 
         private readonly double _leftColumnWidth = 360;
+
+        private readonly View _initialView;
+
+        private System.Windows.Controls.TextBox _keywordTextBox;
+        private System.Windows.Controls.Button _executeButton;
+        private System.Windows.Controls.Button _resetButton;
 
         private ListBox _redListBox;
         private ListBox _yellowListBox;
         private ListBox _blueListBox;
         private ListBox _blackListBox;
         private System.Windows.Controls.DataGrid _resultGrid;
+
+        public RebarTagCheckWindow(
+            UIDocument uidoc,
+            View initialView,
+            RebarTagHighlightExternalEventService externalEventService,
+            RebarTagCheckExecuteExternalEventService checkExecuteExternalEventService)
+        {
+            _uidoc = uidoc;
+            _initialView = initialView;
+            _externalEventService = externalEventService;
+            _checkExecuteExternalEventService = checkExecuteExternalEventService;
+
+            _vm = new RebarTagCheckViewModel();
+            _vm.SetTargetView(initialView);
+            _vm.SetRebars(new List<RebarListItem>());
+            _vm.SetRebarCount(0);
+
+            DataContext = _vm;
+            InitializeWindow();
+            ApplyWpfUiResources();
+            BuildLayout();
+        }
 
         public RebarTagCheckWindow(
             UIDocument uidoc,
@@ -41,6 +70,8 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             _uidoc = uidoc;
             _externalEventService = externalEventService;
+            _checkExecuteExternalEventService = null;
+            _initialView = targetView;
 
             _vm = new RebarTagCheckViewModel();
             _vm.SetTargetView(targetView);
@@ -63,6 +94,8 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             _uidoc = uidoc;
             _externalEventService = externalEventService;
+            _checkExecuteExternalEventService = null;
+            _initialView = sheet;
 
             _vm = new RebarTagCheckViewModel();
             _vm.SetTargetSheetAndViews(sheet, views);
@@ -85,6 +118,8 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             _uidoc = uidoc;
             _externalEventService = externalEventService;
+            _checkExecuteExternalEventService = null;
+            _initialView = null;
 
             _vm = new RebarTagCheckViewModel();
             _vm.SetTargetSheetsAndViewCount(sheets, viewCount);
@@ -196,20 +231,19 @@ namespace ShimizRevitAddin2026.UI.Windows
             countPanel.Children.Add(countValue);
             root.Children.Add(countPanel);
 
-            root.Children.Add(CreateKeywordRow());
+            root.Children.Add(CreateKeywordAndActionRow());
 
             System.Windows.Controls.Grid.SetRow(root, 0);
             return root;
         }
 
-        private UIElement CreateKeywordRow()
+        private UIElement CreateKeywordAndActionRow()
         {
-            var panel = new DockPanel
+            // Keyword入力欄の右側に実行/リセットを配置する
+            var grid = new System.Windows.Controls.Grid
             {
-                LastChildFill = true,
                 Margin = new Thickness(0, 6, 0, 0),
-                Width = _leftColumnWidth,
-                HorizontalAlignment = HorizontalAlignment.Left
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
             var label = new System.Windows.Controls.TextBlock
@@ -219,21 +253,58 @@ namespace ShimizRevitAddin2026.UI.Windows
                 FontSize = 14,
                 Margin = new Thickness(0, 0, 8, 0)
             };
-            DockPanel.SetDock(label, Dock.Left);
+            System.Windows.Controls.Grid.SetColumn(label, 0);
 
             var box = new System.Windows.Controls.TextBox
             {
                 Height = 28,
                 VerticalContentAlignment = VerticalAlignment.Center
             };
+            _keywordTextBox = box;
             box.SetBinding(System.Windows.Controls.TextBox.TextProperty, new System.Windows.Data.Binding(nameof(RebarTagCheckViewModel.Keyword))
             {
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
             });
+            System.Windows.Controls.Grid.SetColumn(box, 1);
 
-            panel.Children.Add(label);
-            panel.Children.Add(box);
-            return panel;
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            System.Windows.Controls.Grid.SetColumn(buttons, 2);
+
+            var execute = new System.Windows.Controls.Button
+            {
+                Content = "照査実行",
+                Width = 120,
+                Height = 30,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            execute.Click += OnExecuteButtonClick;
+            _executeButton = execute;
+
+            var reset = new System.Windows.Controls.Button
+            {
+                Content = "リセット",
+                Width = 120,
+                Height = 30
+            };
+            reset.Click += OnResetButtonClick;
+            _resetButton = reset;
+
+            buttons.Children.Add(execute);
+            buttons.Children.Add(reset);
+
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            grid.Children.Add(label);
+            grid.Children.Add(box);
+            grid.Children.Add(buttons);
+
+            return grid;
         }
 
         private UIElement CreateTargetSheetRow()
@@ -523,6 +594,240 @@ namespace ShimizRevitAddin2026.UI.Windows
             });
 
             return grid;
+        }
+
+        private void OnExecuteButtonClick(object sender, RoutedEventArgs e)
+        {
+            TryExecuteCheck();
+        }
+
+        private void OnResetButtonClick(object sender, RoutedEventArgs e)
+        {
+            ResetToInitialState();
+        }
+
+        private enum ExecuteScope
+        {
+            Cancelled = 0,
+            ActiveView = 1,
+            KeywordSheets = 2,
+        }
+
+        private void TryExecuteCheck()
+        {
+            if (_checkExecuteExternalEventService == null)
+            {
+                TaskDialog.Show("RebarTag", "照査実行サービスが初期化されていません。");
+                return;
+            }
+
+            var scope = SelectExecuteScope();
+            if (scope == ExecuteScope.Cancelled)
+            {
+                return;
+            }
+
+            if (scope == ExecuteScope.KeywordSheets && IsKeywordEmpty())
+            {
+                RequireKeywordInput();
+                return;
+            }
+
+            SetActionButtonsEnabled(false);
+
+            var mode = scope == ExecuteScope.ActiveView
+                ? RebarTagCheckExecutionMode.ActiveView
+                : RebarTagCheckExecutionMode.KeywordSheets;
+
+            _checkExecuteExternalEventService.Request(mode, _vm?.Keyword ?? string.Empty, OnCheckCompleted);
+        }
+
+        private ExecuteScope SelectExecuteScope()
+        {
+            // 実行時に対象範囲を選択する
+            var td = new TaskDialog("RebarTag")
+            {
+                MainInstruction = "対象範囲を選択してください。",
+                MainContent = "現在のビュー、またはKeywordを含むシートを対象に検証します。",
+                CommonButtons = TaskDialogCommonButtons.Cancel
+            };
+
+            td.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "現在のビュー（Sheetの場合はそのSheetに配置されたビュー）");
+            td.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Keyword（シート名にKeywordを含む）");
+
+            var r = td.Show();
+            if (r == TaskDialogResult.CommandLink1)
+            {
+                return ExecuteScope.ActiveView;
+            }
+
+            if (r == TaskDialogResult.CommandLink2)
+            {
+                return ExecuteScope.KeywordSheets;
+            }
+
+            return ExecuteScope.Cancelled;
+        }
+
+        private bool IsKeywordEmpty()
+        {
+            var k = _vm == null ? string.Empty : (_vm.Keyword ?? string.Empty);
+            return string.IsNullOrWhiteSpace(k);
+        }
+
+        private void RequireKeywordInput()
+        {
+            TaskDialog.Show("RebarTag", "Keyword を入力してください。");
+            FocusKeywordTextBox();
+        }
+
+        private void FocusKeywordTextBox()
+        {
+            try
+            {
+                _keywordTextBox?.Focus();
+                _keywordTextBox?.SelectAll();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
+        }
+
+        private void OnCheckCompleted(RebarTagCheckExecutionResult result)
+        {
+            try
+            {
+                Dispatcher.Invoke(() => ApplyCheckResult(result));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                SetActionButtonsEnabled(true);
+            }
+        }
+
+        private void ApplyCheckResult(RebarTagCheckExecutionResult result)
+        {
+            try
+            {
+                if (result == null || !result.IsSucceeded)
+                {
+                    var msg = result == null ? "結果が null です。" : (result.ErrorMessage ?? string.Empty);
+                    TaskDialog.Show("RebarTag", string.IsNullOrWhiteSpace(msg) ? "照査に失敗しました。" : msg);
+                    return;
+                }
+
+                ClearCurrentResultPanel();
+                ClearAllSelections();
+
+                UpdateTargetHeaderByResult(result);
+                _vm.SetRebars(result.Rebars);
+                _vm.SetRebarCount(result.RebarCount);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                TaskDialog.Show("RebarTag", ex.ToString());
+            }
+            finally
+            {
+                SetActionButtonsEnabled(true);
+            }
+        }
+
+        private void UpdateTargetHeaderByResult(RebarTagCheckExecutionResult result)
+        {
+            if (result == null || _vm == null)
+            {
+                return;
+            }
+
+            if (result.TargetKind == RebarTagCheckExecutionTargetKind.SingleView)
+            {
+                _vm.SetTargetView(result.TargetView);
+                return;
+            }
+
+            if (result.TargetKind == RebarTagCheckExecutionTargetKind.SheetWithPlacedViews)
+            {
+                _vm.SetTargetSheetAndViews(result.TargetSheet, result.PlacedViews);
+                return;
+            }
+
+            if (result.TargetKind == RebarTagCheckExecutionTargetKind.MultipleSheets)
+            {
+                _vm.SetTargetSheetsAndViewCount(result.Sheets, result.ViewCount);
+            }
+        }
+
+        private void ClearCurrentResultPanel()
+        {
+            // 直前選択の結果が残ると混乱するため、実行/リセットでクリアする
+            try
+            {
+                _vm?.UpdateRows(new List<string>(), new List<string>());
+                _vm?.UpdateNgReason(string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
+        }
+
+        private void ClearAllSelections()
+        {
+            try
+            {
+                if (_redListBox != null) _redListBox.SelectedItem = null;
+                if (_yellowListBox != null) _yellowListBox.SelectedItem = null;
+                if (_blueListBox != null) _blueListBox.SelectedItem = null;
+                if (_blackListBox != null) _blackListBox.SelectedItem = null;
+                if (_resultGrid != null) _resultGrid.SelectedItem = null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
+        }
+
+        private void ResetToInitialState()
+        {
+            try
+            {
+                SetActionButtonsEnabled(true);
+                ClearAllSelections();
+                ClearCurrentResultPanel();
+
+                if (_vm != null)
+                {
+                    _vm.Keyword = string.Empty;
+                    _vm.SetRebars(new List<RebarListItem>());
+                    _vm.SetRebarCount(0);
+
+                    if (_initialView != null)
+                    {
+                        _vm.SetTargetView(_initialView);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
+        }
+
+        private void SetActionButtonsEnabled(bool enabled)
+        {
+            try
+            {
+                if (_executeButton != null) _executeButton.IsEnabled = enabled;
+                if (_resetButton != null) _resetButton.IsEnabled = enabled;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
         }
 
         private void OnRebarSelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System;
 using System.Runtime.CompilerServices;
 using Autodesk.Revit.DB;
 using ShimizRevitAddin2026.Model;
@@ -18,8 +17,6 @@ namespace ShimizRevitAddin2026.UI.ViewModels
         public ObservableCollection<RebarListItem> BlackRebars { get; } = new ObservableCollection<RebarListItem>();
         public ObservableCollection<RebarTagPairRow> Rows { get; } = new ObservableCollection<RebarTagPairRow>();
 
-        private List<RebarListItem> _allRebars = new List<RebarListItem>();
-
         private string _keyword = string.Empty;
         public string Keyword
         {
@@ -29,7 +26,6 @@ namespace ShimizRevitAddin2026.UI.ViewModels
                 if (_keyword == value) return;
                 _keyword = value ?? string.Empty;
                 OnPropertyChanged();
-                ApplyKeywordFilterToGroups();
             }
         }
 
@@ -248,50 +244,19 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         public void SetRebars(IEnumerable<RebarListItem> items)
         {
-            _allRebars = items == null
-                ? new List<RebarListItem>()
-                : items.Where(x => x != null).ToList();
-
-            ApplyKeywordFilterToGroups();
-        }
-
-        private void ApplyKeywordFilterToGroups()
-        {
             ClearRebarGroups();
+            if (items == null)
+            {
+                UpdateGroupCounts();
+                return;
+            }
 
-            foreach (var item in BuildOrderedRebarItems(FilterByKeyword(_allRebars, _keyword)))
+            foreach (var item in BuildOrderedRebarItems(items))
             {
                 AddToGroup(item);
             }
 
             UpdateGroupCounts();
-        }
-
-        private IEnumerable<RebarListItem> FilterByKeyword(IEnumerable<RebarListItem> items, string keyword)
-        {
-            if (items == null)
-            {
-                return new List<RebarListItem>();
-            }
-
-            var k = (keyword ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(k))
-            {
-                return items;
-            }
-
-            return items.Where(i => ContainsKeyword(i?.DisplayText, k));
-        }
-
-        private bool ContainsKeyword(string text, string keyword)
-        {
-            if (string.IsNullOrWhiteSpace(keyword))
-            {
-                return true;
-            }
-
-            var t = text ?? string.Empty;
-            return t.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private IEnumerable<RebarListItem> BuildOrderedRebarItems(IEnumerable<RebarListItem> items)

@@ -40,18 +40,16 @@ namespace ShimizRevitAddin2026.Commands
                 var highlighter = BuildHighlighter(dependentTagCollector);
                 var externalEventService = new RebarTagHighlightExternalEventService(highlighter, consistencyService);
 
-                var scope = SelectTargetScope();
-                if (scope == TargetScope.Cancelled)
-                {
-                    return Result.Cancelled;
-                }
+                // ウィンドウは「開くだけ」にして、照査はウィンドウ内ボタンで実行する
+                var executionService = new RebarTagCheckExecutionService(dependentTagCollector, consistencyService);
+                var checkExecuteService = new RebarTagCheckExecuteExternalEventService(executionService);
 
-                if (scope == TargetScope.ActiveContext)
-                {
-                    return ExecuteForActiveContext(uidoc, uiapp, doc, activeView, dependentTagCollector, consistencyService, externalEventService);
-                }
+                var window = new RebarTagCheckWindow(uidoc, activeView, externalEventService, checkExecuteService);
+                SetOwner(uiapp, window);
+                _windowStore.SetCurrent(window);
+                window.Show();
 
-                return ExecuteForAllTargetSheets(uidoc, uiapp, doc, activeView, dependentTagCollector, consistencyService, externalEventService);
+                return Result.Succeeded;
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
             {
