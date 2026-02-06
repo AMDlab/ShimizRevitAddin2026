@@ -265,7 +265,10 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             var box = new System.Windows.Controls.TextBox
             {
-                Height = 28,
+                // フォントが切れないように、余白と高さを少し確保する
+                Height = 32,
+                MinHeight = 32,
+                Padding = new Thickness(6, 3, 6, 3),
                 VerticalContentAlignment = VerticalAlignment.Center
             };
             _keywordTextBox = box;
@@ -289,7 +292,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             {
                 Content = "照査実行",
                 Width = 120,
-                Height = 30,
+                Height = 32,
                 Margin = new Thickness(0, 0, 8, 0)
             };
             execute.Click += OnExecuteButtonClick;
@@ -299,7 +302,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             {
                 Content = "リセット",
                 Width = 120,
-                Height = 30
+                Height = 32
             };
             reset.Click += OnResetButtonClick;
             _resetButton = reset;
