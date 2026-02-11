@@ -84,6 +84,9 @@
     <Compile Include="Services\RebarTagHighlighter.cs" />
     <Compile Include="Services\RebarTagNameMatcher.cs" />
     <Compile Include="Services\SheetPlacedViewCollector.cs" />
+    <Compile Include="UI\Ribbon\RevitAddinApplication.cs" />
+    <Compile Include="UI\Ribbon\RevitRibbonBuilder.cs" />
+    <Compile Include="UI\Ribbon\RibbonIconFactory.cs" />
     <Compile Include="UI\Models\RebarListItem.cs" />
     <Compile Include="UI\Models\RebarTagCheckExecutionResult.cs" />
     <Compile Include="UI\Models\RebarTagPairRow.cs" />

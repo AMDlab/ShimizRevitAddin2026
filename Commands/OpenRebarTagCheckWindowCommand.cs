@@ -14,7 +14,7 @@ using ShimizRevitAddin2026.UI.Windows;
 namespace ShimizRevitAddin2026.Commands
 {
     [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
-    internal class OpenRebarTagCheckWindowCommand : IExternalCommand
+    public class OpenRebarTagCheckWindowCommand : IExternalCommand
     {
         private const string BendingDetailTagName = "曲げ加工詳細";
         private const string TargetSheetNameToken = "配筋図";

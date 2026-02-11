@@ -11,7 +11,7 @@ using ShimizRevitAddin2026.Services;
 namespace ShimizRevitAddin2026.Commands
 {
     [Autodesk.Revit.Attributes.Transaction(Autodesk.Revit.Attributes.TransactionMode.Manual)]
-    internal class HighlightRebarTagsInActiveViewCommand : IExternalCommand
+    public class HighlightRebarTagsInActiveViewCommand : IExternalCommand
     {
         private const string BendingDetailTagName = "曲げ加工詳細";
 
