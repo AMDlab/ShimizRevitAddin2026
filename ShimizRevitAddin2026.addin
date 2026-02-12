@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>ShimizRevitAddin2026</Name>
+    <Assembly>C:\ProgramData\Autodesk\Revit\Addins\2024\ShimizRevitAddin2026.dll</Assembly>
+    <AddInId>{7713DA95-97BF-4F73-8038-9873EA12BA83}</AddInId>
+    <FullClassName>ShimizRevitAddin2026.UI.Ribbon.RevitAddinApplication</FullClassName>
+    <VendorId>SHIMIZ</VendorId>
+    <VendorDescription>Shimiz Revit Addin</VendorDescription>
+  </AddIn>
+</RevitAddIns>
+
