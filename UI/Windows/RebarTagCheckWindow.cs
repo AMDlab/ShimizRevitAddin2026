@@ -33,10 +33,10 @@ namespace ShimizRevitAddin2026.UI.Windows
         private System.Windows.Controls.Button _executeButton;
         private System.Windows.Controls.Button _resetButton;
 
-        private ListBox _redListBox;
-        private ListBox _yellowListBox;
-        private ListBox _blueListBox;
-        private ListBox _blackListBox;
+        private ListBox _group1ListBox;
+        private ListBox _group2ListBox;
+        private ListBox _group3ListBox;
+        private ListBox _group4ListBox;
         private System.Windows.Controls.DataGrid _resultGrid;
 
         public RebarTagCheckWindow(
@@ -448,10 +448,39 @@ namespace ShimizRevitAddin2026.UI.Windows
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            panel.Children.Add(CreateRebarExpander("HOST不一致", nameof(RebarTagCheckViewModel.RedCountText), out _redListBox, nameof(RebarTagCheckViewModel.RedRebars), Brushes.Red, System.Windows.Media.Color.FromRgb(255, 235, 238)));
-            panel.Children.Add(CreateRebarExpander("自由端タグ線分未取得", nameof(RebarTagCheckViewModel.YellowCountText), out _yellowListBox, nameof(RebarTagCheckViewModel.YellowRebars), Brushes.DarkGoldenrod, System.Windows.Media.Color.FromRgb(255, 249, 196)));
-            panel.Children.Add(CreateRebarExpander("構造タグなし・曲げ詳細なし", nameof(RebarTagCheckViewModel.BlueCountText), out _blueListBox, nameof(RebarTagCheckViewModel.BlueRebars), Brushes.Blue, System.Windows.Media.Color.FromRgb(227, 242, 253)));
-            panel.Children.Add(CreateRebarExpander("一致", nameof(RebarTagCheckViewModel.BlackCountText), out _blackListBox, nameof(RebarTagCheckViewModel.BlackRebars), Brushes.Black, System.Windows.Media.Color.FromRgb(245, 245, 245)));
+            // ① タグまたは曲げの詳細がホストされてない
+            panel.Children.Add(CreateRebarExpander(
+                "①タグまたは曲げ詳細なし",
+                nameof(RebarTagCheckViewModel.Group1CountText),
+                out _group1ListBox,
+                nameof(RebarTagCheckViewModel.Group1Rebars),
+                Brushes.Blue,
+                System.Windows.Media.Color.FromRgb(227, 242, 253)));
+
+            // ② 自由な端点のタグがホストされてない
+            panel.Children.Add(CreateRebarExpander(
+                "②自由端タグなし",
+                nameof(RebarTagCheckViewModel.Group2CountText),
+                out _group2ListBox,
+                nameof(RebarTagCheckViewModel.Group2Rebars),
+                Brushes.DarkGoldenrod,
+                System.Windows.Media.Color.FromRgb(255, 249, 196)));
+
+            // ③ 自由な端点のタグが鉄筋モデルを指している（赤=HOST不一致）
+            panel.Children.Add(CreateRebarExpander(
+                "③鉄筋モデルを指している",
+                nameof(RebarTagCheckViewModel.Group3CountText),
+                out _group3ListBox,
+                nameof(RebarTagCheckViewModel.Group3Rebars),
+                BuildGroup3ListItemStyle()));
+
+            // ④ 自由な端点の先にある曲げの詳細を指している（赤=HOST不一致）
+            panel.Children.Add(CreateRebarExpander(
+                "④曲げ詳細を指している",
+                nameof(RebarTagCheckViewModel.Group4CountText),
+                out _group4ListBox,
+                nameof(RebarTagCheckViewModel.Group4Rebars),
+                BuildGroup4ListItemStyle()));
 
             return panel;
         }
@@ -463,6 +492,17 @@ namespace ShimizRevitAddin2026.UI.Windows
             string itemsBindingName,
             Brush foreground,
             System.Windows.Media.Color backgroundColor)
+        {
+            return CreateRebarExpander(headerText, countBindingName, out listBox, itemsBindingName,
+                BuildFixedColorListItemStyle(foreground, backgroundColor));
+        }
+
+        private UIElement CreateRebarExpander(
+            string headerText,
+            string countBindingName,
+            out ListBox listBox,
+            string itemsBindingName,
+            Style itemStyle)
         {
             var expander = new Expander
             {
@@ -499,7 +539,7 @@ namespace ShimizRevitAddin2026.UI.Windows
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch
             };
-            listBox.ItemContainerStyle = BuildFixedColorListItemStyle(foreground, backgroundColor);
+            listBox.ItemContainerStyle = itemStyle;
             ScrollViewer.SetVerticalScrollBarVisibility(listBox, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(listBox, ScrollBarVisibility.Disabled);
             listBox.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(itemsBindingName));
@@ -515,6 +555,48 @@ namespace ShimizRevitAddin2026.UI.Windows
             style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, foreground));
             style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
             style.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(backgroundColor)));
+            return style;
+        }
+
+        // ③ 自由な端点のタグが鉄筋モデルを指している
+        // IsLeaderPointingRebarMismatch=true の場合は赤、それ以外は緑
+        private Style BuildGroup3ListItemStyle()
+        {
+            var style = new Style(typeof(ListBoxItem));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.DarkGreen));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(232, 245, 233))));
+
+            var trigger = new DataTrigger
+            {
+                Binding = new System.Windows.Data.Binding(nameof(RebarListItem.IsLeaderPointingRebarMismatch)),
+                Value = true
+            };
+            trigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Red));
+            trigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 238))));
+            style.Triggers.Add(trigger);
+
+            return style;
+        }
+
+        // ④ 自由な端点の先にある曲げの詳細を指している
+        // IsLeaderPointingBendingDetailMismatch=true の場合は赤、それ以外は黒
+        private Style BuildGroup4ListItemStyle()
+        {
+            var style = new Style(typeof(ListBoxItem));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Black));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(245, 245, 245))));
+
+            var trigger = new DataTrigger
+            {
+                Binding = new System.Windows.Data.Binding(nameof(RebarListItem.IsLeaderPointingBendingDetailMismatch)),
+                Value = true
+            };
+            trigger.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Red));
+            trigger.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 238))));
+            style.Triggers.Add(trigger);
+
             return style;
         }
 
@@ -793,10 +875,10 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             try
             {
-                if (_redListBox != null) _redListBox.SelectedItem = null;
-                if (_yellowListBox != null) _yellowListBox.SelectedItem = null;
-                if (_blueListBox != null) _blueListBox.SelectedItem = null;
-                if (_blackListBox != null) _blackListBox.SelectedItem = null;
+                if (_group1ListBox != null) _group1ListBox.SelectedItem = null;
+                if (_group2ListBox != null) _group2ListBox.SelectedItem = null;
+                if (_group3ListBox != null) _group3ListBox.SelectedItem = null;
+                if (_group4ListBox != null) _group4ListBox.SelectedItem = null;
                 if (_resultGrid != null) _resultGrid.SelectedItem = null;
             }
             catch (Exception ex)
@@ -886,10 +968,10 @@ namespace ShimizRevitAddin2026.UI.Windows
             // 別のリストで選択が残ると混乱するため、選択元以外は解除する
             try
             {
-                if (!ReferenceEquals(sender, _redListBox) && _redListBox != null) _redListBox.SelectedItem = null;
-                if (!ReferenceEquals(sender, _yellowListBox) && _yellowListBox != null) _yellowListBox.SelectedItem = null;
-                if (!ReferenceEquals(sender, _blueListBox) && _blueListBox != null) _blueListBox.SelectedItem = null;
-                if (!ReferenceEquals(sender, _blackListBox) && _blackListBox != null) _blackListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _group1ListBox) && _group1ListBox != null) _group1ListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _group2ListBox) && _group2ListBox != null) _group2ListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _group3ListBox) && _group3ListBox != null) _group3ListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _group4ListBox) && _group4ListBox != null) _group4ListBox.SelectedItem = null;
             }
             catch (Exception ex)
             {

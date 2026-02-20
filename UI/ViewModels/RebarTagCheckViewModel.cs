@@ -11,130 +11,88 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 {
     internal class RebarTagCheckViewModel : INotifyPropertyChanged
     {
-        public ObservableCollection<RebarListItem> RedRebars { get; } = new ObservableCollection<RebarListItem>();
-        public ObservableCollection<RebarListItem> YellowRebars { get; } = new ObservableCollection<RebarListItem>();
-        public ObservableCollection<RebarListItem> BlueRebars { get; } = new ObservableCollection<RebarListItem>();
-        public ObservableCollection<RebarListItem> BlackRebars { get; } = new ObservableCollection<RebarListItem>();
+        // ① タグまたは曲げの詳細がホストされてない
+        public ObservableCollection<RebarListItem> Group1Rebars { get; } = new ObservableCollection<RebarListItem>();
+
+        // ② 自由な端点のタグがホストされてない
+        public ObservableCollection<RebarListItem> Group2Rebars { get; } = new ObservableCollection<RebarListItem>();
+
+        // ③ 自由な端点のタグが鉄筋モデルを指している（赤=HOST不一致）
+        public ObservableCollection<RebarListItem> Group3Rebars { get; } = new ObservableCollection<RebarListItem>();
+
+        // ④ 自由な端点の先にある曲げの詳細を指している（赤=HOST不一致）
+        public ObservableCollection<RebarListItem> Group4Rebars { get; } = new ObservableCollection<RebarListItem>();
+
         public ObservableCollection<RebarTagPairRow> Rows { get; } = new ObservableCollection<RebarTagPairRow>();
 
         private string _keyword = string.Empty;
         public string Keyword
         {
             get => _keyword;
-            set
-            {
-                if (_keyword == value) return;
-                _keyword = value ?? string.Empty;
-                OnPropertyChanged();
-            }
+            set { if (_keyword == value) return; _keyword = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         private string _ngReasonText = string.Empty;
         public string NgReasonText
         {
             get => _ngReasonText;
-            private set
-            {
-                if (_ngReasonText == value) return;
-                _ngReasonText = value ?? string.Empty;
-                OnPropertyChanged();
-            }
+            private set { if (_ngReasonText == value) return; _ngReasonText = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         private string _targetViewText = string.Empty;
         public string TargetViewText
         {
             get => _targetViewText;
-            private set
-            {
-                if (_targetViewText == value) return;
-                _targetViewText = value ?? string.Empty;
-                OnPropertyChanged();
-            }
+            private set { if (_targetViewText == value) return; _targetViewText = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         private string _targetSheetText = string.Empty;
         public string TargetSheetText
         {
             get => _targetSheetText;
-            private set
-            {
-                if (_targetSheetText == value) return;
-                _targetSheetText = value ?? string.Empty;
-                OnPropertyChanged();
-            }
+            private set { if (_targetSheetText == value) return; _targetSheetText = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         private string _targetViewsText = string.Empty;
         public string TargetViewsText
         {
             get => _targetViewsText;
-            private set
-            {
-                if (_targetViewsText == value) return;
-                _targetViewsText = value ?? string.Empty;
-                OnPropertyChanged();
-            }
+            private set { if (_targetViewsText == value) return; _targetViewsText = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         private string _rebarCountText = string.Empty;
         public string RebarCountText
         {
             get => _rebarCountText;
-            private set
-            {
-                if (_rebarCountText == value) return;
-                _rebarCountText = value ?? string.Empty;
-                OnPropertyChanged();
-            }
+            private set { if (_rebarCountText == value) return; _rebarCountText = value ?? string.Empty; OnPropertyChanged(); }
         }
 
-        private string _redCountText = "0";
-        public string RedCountText
+        private string _group1CountText = "0";
+        public string Group1CountText
         {
-            get => _redCountText;
-            private set
-            {
-                if (_redCountText == value) return;
-                _redCountText = value ?? "0";
-                OnPropertyChanged();
-            }
+            get => _group1CountText;
+            private set { if (_group1CountText == value) return; _group1CountText = value ?? "0"; OnPropertyChanged(); }
         }
 
-        private string _yellowCountText = "0";
-        public string YellowCountText
+        private string _group2CountText = "0";
+        public string Group2CountText
         {
-            get => _yellowCountText;
-            private set
-            {
-                if (_yellowCountText == value) return;
-                _yellowCountText = value ?? "0";
-                OnPropertyChanged();
-            }
+            get => _group2CountText;
+            private set { if (_group2CountText == value) return; _group2CountText = value ?? "0"; OnPropertyChanged(); }
         }
 
-        private string _blueCountText = "0";
-        public string BlueCountText
+        private string _group3CountText = "0";
+        public string Group3CountText
         {
-            get => _blueCountText;
-            private set
-            {
-                if (_blueCountText == value) return;
-                _blueCountText = value ?? "0";
-                OnPropertyChanged();
-            }
+            get => _group3CountText;
+            private set { if (_group3CountText == value) return; _group3CountText = value ?? "0"; OnPropertyChanged(); }
         }
 
-        private string _blackCountText = "0";
-        public string BlackCountText
+        private string _group4CountText = "0";
+        public string Group4CountText
         {
-            get => _blackCountText;
-            private set
-            {
-                if (_blackCountText == value) return;
-                _blackCountText = value ?? "0";
-                OnPropertyChanged();
-            }
+            get => _group4CountText;
+            private set { if (_group4CountText == value) return; _group4CountText = value ?? "0"; OnPropertyChanged(); }
         }
 
         public void SetTargetView(View view)
@@ -172,10 +130,8 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         public void SetTargetSheetsAndViewCount(IReadOnlyList<ViewSheet> sheets, int viewCount)
         {
-            // 複数シート対象時の表示（長くなりすぎないように件数を主に出す）
             var sheetCount = sheets == null ? 0 : sheets.Count;
             var sheetSummary = BuildSheetSummaryText(sheets, 3);
-
             TargetSheetText = string.IsNullOrWhiteSpace(sheetSummary) ? $"シート数：{sheetCount}" : $"{sheetSummary}（{sheetCount}）";
             TargetViewsText = viewCount < 0 ? "ビュー数：0" : $"ビュー数：{viewCount}";
             TargetViewText = $"{TargetSheetText}  {TargetViewsText}";
@@ -183,15 +139,8 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         private string BuildSheetSummaryText(IReadOnlyList<ViewSheet> sheets, int maxCount)
         {
-            if (sheets == null || sheets.Count == 0)
-            {
-                return string.Empty;
-            }
-
-            if (maxCount < 1)
-            {
-                maxCount = 1;
-            }
+            if (sheets == null || sheets.Count == 0) return string.Empty;
+            if (maxCount < 1) maxCount = 1;
 
             var names = sheets
                 .Where(s => s != null)
@@ -200,39 +149,18 @@ namespace ShimizRevitAddin2026.UI.ViewModels
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .ToList();
 
-            if (names.Count == 0)
-            {
-                return string.Empty;
-            }
-
+            if (names.Count == 0) return string.Empty;
             var joined = string.Join(" / ", names);
-            if (sheets.Count <= maxCount)
-            {
-                return joined;
-            }
-
-            return $"{joined} / ...";
+            return sheets.Count <= maxCount ? joined : $"{joined} / ...";
         }
 
         private string BuildSheetDisplayText(ViewSheet sheet)
         {
-            if (sheet == null)
-            {
-                return string.Empty;
-            }
-
+            if (sheet == null) return string.Empty;
             var no = sheet.SheetNumber ?? string.Empty;
             var name = sheet.Name ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(no))
-            {
-                return name;
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return no;
-            }
-
+            if (string.IsNullOrWhiteSpace(no)) return name;
+            if (string.IsNullOrWhiteSpace(name)) return no;
             return $"{no} {name}";
         }
 
@@ -268,50 +196,47 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         private void ClearRebarGroups()
         {
-            RedRebars.Clear();
-            YellowRebars.Clear();
-            BlueRebars.Clear();
-            BlackRebars.Clear();
+            Group1Rebars.Clear();
+            Group2Rebars.Clear();
+            Group3Rebars.Clear();
+            Group4Rebars.Clear();
         }
 
         private void AddToGroup(RebarListItem item)
         {
-            if (item == null)
+            if (item == null) return;
+
+            // ① タグまたは曲げの詳細がホストされてない
+            if (item.IsNoTagOrBendingDetail)
             {
+                Group1Rebars.Add(item);
                 return;
             }
 
-            // 赤：曲げ詳細を取得できて不一致
-            if (item.IsBendingDetailMismatch)
+            // ② 自由な端点のタグがホストされてない
+            if (item.IsFreeEndTagNotFound)
             {
-                RedRebars.Add(item);
+                Group2Rebars.Add(item);
                 return;
             }
 
-            // 黄：自由端タグの線分を取得できない
-            if (item.IsLeaderLineNotFound)
+            // ③ 自由な端点のタグが鉄筋モデルを指している（赤=HOST不一致）
+            if (item.IsLeaderPointingRebar)
             {
-                YellowRebars.Add(item);
+                Group3Rebars.Add(item);
                 return;
             }
 
-            // 青：構造タグなし・曲げ詳細なし（鉄筋のみ）
-            if (item.IsNoTagAndNoBendingDetail)
-            {
-                BlueRebars.Add(item);
-                return;
-            }
-
-            // 黒：上記以外（一致など）
-            BlackRebars.Add(item);
+            // ④ 自由な端点の先にある曲げの詳細を指している（赤=HOST不一致）
+            Group4Rebars.Add(item);
         }
 
         private void UpdateGroupCounts()
         {
-            RedCountText = RedRebars.Count.ToString();
-            YellowCountText = YellowRebars.Count.ToString();
-            BlueCountText = BlueRebars.Count.ToString();
-            BlackCountText = BlackRebars.Count.ToString();
+            Group1CountText = Group1Rebars.Count.ToString();
+            Group2CountText = Group2Rebars.Count.ToString();
+            Group3CountText = Group3Rebars.Count.ToString();
+            Group4CountText = Group4Rebars.Count.ToString();
         }
 
         private string GetSafeDisplayText(RebarListItem item)
@@ -321,36 +246,23 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         private long GetSafeRebarIdValue(RebarListItem item)
         {
-            if (item == null || item.RebarId == null)
-            {
-                return long.MaxValue;
-            }
-
+            if (item == null || item.RebarId == null) return long.MaxValue;
             return item.RebarId.Value;
         }
 
         public void UpdateRowsFromModel(RebarTag model)
         {
-            if (model == null)
-            {
-                ClearRows();
-                return;
-            }
-
+            if (model == null) { ClearRows(); return; }
             var left = ToDisplayStrings(model.StructureTagIds);
             var right = ToDisplayStrings(model.BendingDetailTagIds);
-
             UpdateRows(left, right);
         }
 
         public void UpdateRows(IReadOnlyList<string> structure, IReadOnlyList<string> bending)
         {
             ClearRows();
-
             foreach (var row in BuildRows(structure, bending))
-            {
                 Rows.Add(row);
-            }
         }
 
         public void UpdateNgReason(string text)
@@ -382,10 +294,7 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             }
 
             if (result.Count == 0)
-            {
-                // 空表示用の1行
                 result.Add(new RebarTagPairRow(string.Empty, string.Empty));
-            }
 
             return result;
         }
@@ -398,4 +307,3 @@ namespace ShimizRevitAddin2026.UI.ViewModels
         }
     }
 }
-
