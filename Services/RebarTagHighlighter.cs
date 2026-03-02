@@ -20,6 +20,11 @@ namespace ShimizRevitAddin2026.Services
 
         public RebarTag Highlight(UIDocument uidoc, Rebar rebar, View activeView)
         {
+            return Highlight(uidoc, rebar, activeView, new List<ElementId>());
+        }
+
+        public RebarTag Highlight(UIDocument uidoc, Rebar rebar, View activeView, IEnumerable<ElementId> extraElementIds)
+        {
             if (uidoc == null) throw new ArgumentNullException(nameof(uidoc));
             if (rebar == null) throw new ArgumentNullException(nameof(rebar));
             if (activeView == null) throw new ArgumentNullException(nameof(activeView));
@@ -28,7 +33,7 @@ namespace ShimizRevitAddin2026.Services
             TrySetActiveView(uidoc, activeView);
 
             var model = CollectModel(uidoc.Document, rebar, activeView);
-            var idsToHighlight = BuildSelectionIds(rebar.Id, model.MatchedTagIds);
+            var idsToHighlight = BuildSelectionIds(rebar.Id, model.MatchedTagIds, extraElementIds);
 
             uidoc.Selection.SetElementIds(idsToHighlight);
             uidoc.ShowElements(idsToHighlight);
@@ -64,7 +69,10 @@ namespace ShimizRevitAddin2026.Services
             return _collector.Collect(doc, rebar, activeView);
         }
 
-        private ICollection<ElementId> BuildSelectionIds(ElementId rebarId, IReadOnlyList<ElementId> tagIds)
+        private ICollection<ElementId> BuildSelectionIds(
+            ElementId rebarId,
+            IReadOnlyList<ElementId> tagIds,
+            IEnumerable<ElementId> extraElementIds)
         {
             var result = new List<ElementId> { rebarId };
             if (tagIds == null)
@@ -73,6 +81,10 @@ namespace ShimizRevitAddin2026.Services
             }
 
             result.AddRange(tagIds);
+            if (extraElementIds != null)
+            {
+                result.AddRange(extraElementIds.Where(x => x != null && x != ElementId.InvalidElementId));
+            }
             return result.Distinct().ToList();
         }
     }

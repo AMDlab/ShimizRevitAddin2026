@@ -53,8 +53,12 @@ namespace ShimizRevitAddin2026.ExternalEvents
                     return;
                 }
 
-                var model = _highlighter.Highlight(uidoc, rebar, view);
-                var result = BuildResult(doc, rebar, view, model);
+                var items = GetConsistencyItemsOrEmpty(doc, rebar, view);
+                var extraIds = BuildExtraHighlightIds(items);
+
+                var model = _highlighter.Highlight(uidoc, rebar, view, extraIds);
+                var message = FormatMessage(items);
+                var result = BuildResult(doc, model, message);
                 NotifyCompleted(result);
             }
             catch (Exception ex)
@@ -85,7 +89,7 @@ namespace ShimizRevitAddin2026.ExternalEvents
             return (rebar, view);
         }
 
-        private RebarTagCheckResult BuildResult(Document doc, Rebar rebar, View view, ShimizRevitAddin2026.Model.RebarTag model)
+        private RebarTagCheckResult BuildResult(Document doc, ShimizRevitAddin2026.Model.RebarTag model, string message)
         {
             if (doc == null || model == null)
             {
@@ -94,26 +98,28 @@ namespace ShimizRevitAddin2026.ExternalEvents
 
             var structure = BuildTagContentList(doc, model.StructureTagIds);
             var bending = BuildTagContentList(doc, model.BendingDetailTagIds);
-            var message = BuildMessageText(doc, rebar, view);
             return new RebarTagCheckResult(structure, bending, message);
         }
 
-        private string BuildMessageText(Document doc, Rebar rebar, View view)
+        private IReadOnlyList<ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem> GetConsistencyItemsOrEmpty(
+            Document doc,
+            Rebar rebar,
+            View view)
         {
             try
             {
                 if (_consistencyService == null || doc == null || rebar == null || view == null)
                 {
-                    return string.Empty;
+                    return new List<ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem>();
                 }
 
-                var items = _consistencyService.Check(doc, rebar, view);
-                return FormatMessage(items);
+                return _consistencyService.Check(doc, rebar, view)
+                    ?? new List<ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem>();
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return ex.Message ?? string.Empty;
+                return new List<ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem>();
             }
         }
 
@@ -142,6 +148,37 @@ namespace ShimizRevitAddin2026.ExternalEvents
             }
 
             return string.Join(Environment.NewLine, lines);
+        }
+
+        private IReadOnlyList<ElementId> BuildExtraHighlightIds(
+            IReadOnlyList<ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem> items)
+        {
+            try
+            {
+                var result = new List<ElementId>();
+                if (items == null || items.Count == 0) return result;
+
+                var item = items.FirstOrDefault(x => x != null);
+                if (item == null) return result;
+
+                AddIfValid(result, item.PointedDirectRebarId);
+                AddIfValid(result, item.PointedBendingDetailId);
+                AddIfValid(result, item.PointedRebarId);
+
+                return result.Distinct().ToList();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new List<ElementId>();
+            }
+        }
+
+        private void AddIfValid(ICollection<ElementId> ids, ElementId id)
+        {
+            if (ids == null) return;
+            if (id == null || id == ElementId.InvalidElementId) return;
+            ids.Add(id);
         }
 
         private string BuildPointedBendingDetailLine(ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem item)
