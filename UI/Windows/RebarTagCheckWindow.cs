@@ -559,13 +559,13 @@ namespace ShimizRevitAddin2026.UI.Windows
         }
 
         // ③ 自由な端点のタグが鉄筋モデルを指している
-        // IsLeaderPointingRebarMismatch=true の場合は赤、それ以外は緑
+        // IsLeaderPointingRebarMismatch=true の場合は赤、それ以外は黒
         private Style BuildGroup3ListItemStyle()
         {
             var style = new Style(typeof(ListBoxItem));
-            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.DarkGreen));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, Brushes.Black));
             style.Setters.Add(new Setter(System.Windows.Controls.Control.FontWeightProperty, FontWeights.SemiBold));
-            style.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(232, 245, 233))));
+            style.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(245, 245, 245))));
 
             var trigger = new DataTrigger
             {

@@ -190,8 +190,26 @@ namespace ShimizRevitAddin2026.UI.ViewModels
         private IEnumerable<RebarListItem> BuildOrderedRebarItems(IEnumerable<RebarListItem> items)
         {
             return items
-                .OrderBy(GetSafeDisplayText)
+                .OrderBy(GetGroupOrderKey)
+                .ThenBy(GetSafeDisplayText)
                 .ThenBy(GetSafeRebarIdValue);
+        }
+
+        private int GetGroupOrderKey(RebarListItem item)
+        {
+            if (item == null) return int.MaxValue;
+
+            // ③/④ は「一致」をリスト末尾に回す（不一致→一致の順）
+            if (item.IsNoTagOrBendingDetail) return 10;
+            if (item.IsFreeEndTagNotFound) return 20;
+
+            if (item.IsLeaderPointingRebar)
+                return item.IsLeaderPointingRebarMismatch ? 30 : 31;
+
+            if (item.IsLeaderPointingBendingDetail)
+                return item.IsLeaderPointingBendingDetailMismatch ? 40 : 41;
+
+            return 99;
         }
 
         private void ClearRebarGroups()
