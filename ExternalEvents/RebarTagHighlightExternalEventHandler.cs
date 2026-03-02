@@ -19,6 +19,8 @@ namespace ShimizRevitAddin2026.ExternalEvents
         private ElementId _viewId = ElementId.InvalidElementId;
         private Action<RebarTagCheckResult> _onCompleted;
 
+        private ElementId _leaderEndMarkerCurveId = ElementId.InvalidElementId;
+
         public RebarTagHighlightExternalEventHandler(
             RebarTagHighlighter highlighter,
             RebarTagLeaderBendingDetailConsistencyService consistencyService)
@@ -59,6 +61,8 @@ namespace ShimizRevitAddin2026.ExternalEvents
                 var model = _highlighter.Highlight(uidoc, rebar, view, extraIds);
                 var message = FormatMessage(items);
                 var result = BuildResult(doc, model, message);
+
+                TryRedrawLeaderEndMarker(doc, view, rebar);
                 NotifyCompleted(result);
             }
             catch (Exception ex)
@@ -179,6 +183,134 @@ namespace ShimizRevitAddin2026.ExternalEvents
             if (ids == null) return;
             if (id == null || id == ElementId.InvalidElementId) return;
             ids.Add(id);
+        }
+
+        private void TryRedrawLeaderEndMarker(Document doc, View view, Rebar rebar)
+        {
+            try
+            {
+                if (_consistencyService == null) return;
+                if (doc == null || view == null || rebar == null) return;
+
+                var (ok, endPoint, reason) = _consistencyService.TryGetLeaderEndPoint(doc, rebar, view);
+                if (!ok || endPoint == null)
+                {
+                    // マーカーが作れない場合でも、前回のマーカーは消す
+                    DeleteLeaderEndMarker(doc);
+                    if (!string.IsNullOrWhiteSpace(reason)) Debug.WriteLine(reason);
+                    return;
+                }
+
+                using (var tx = new Transaction(doc, "RebarTag: Leader end marker"))
+                {
+                    tx.Start();
+                    DeleteLeaderEndMarkerInternal(doc);
+                    CreateLeaderEndMarkerInternal(doc, view, endPoint);
+                    tx.Commit();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
+        }
+
+        private void DeleteLeaderEndMarker(Document doc)
+        {
+            try
+            {
+                if (doc == null) return;
+                using (var tx = new Transaction(doc, "RebarTag: Delete leader end marker"))
+                {
+                    tx.Start();
+                    DeleteLeaderEndMarkerInternal(doc);
+                    tx.Commit();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                _leaderEndMarkerCurveId = ElementId.InvalidElementId;
+            }
+        }
+
+        private void DeleteLeaderEndMarkerInternal(Document doc)
+        {
+            if (doc == null) return;
+            if (_leaderEndMarkerCurveId == null || _leaderEndMarkerCurveId == ElementId.InvalidElementId) return;
+
+            try
+            {
+                if (doc.GetElement(_leaderEndMarkerCurveId) != null)
+                    doc.Delete(_leaderEndMarkerCurveId);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
+            finally
+            {
+                _leaderEndMarkerCurveId = ElementId.InvalidElementId;
+            }
+        }
+
+        private void CreateLeaderEndMarkerInternal(Document doc, View view, XYZ center)
+        {
+            try
+            {
+                if (doc == null || view == null || center == null) return;
+
+                var arc = BuildLeaderEndCircle(view, center, 150.0 / 304.8); // 150mm
+                if (arc == null) return;
+
+                var curve = doc.Create.NewDetailCurve(view, arc);
+                if (curve == null) return;
+
+                _leaderEndMarkerCurveId = curve.Id;
+                ApplyLeaderEndMarkerGraphics(view, _leaderEndMarkerCurveId);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                _leaderEndMarkerCurveId = ElementId.InvalidElementId;
+            }
+        }
+
+        private Arc BuildLeaderEndCircle(View view, XYZ center, double radiusFeet)
+        {
+            try
+            {
+                if (view == null || center == null) return null;
+                if (radiusFeet <= 0) return null;
+
+                var x = view.RightDirection;
+                var y = view.UpDirection;
+                if (x == null || y == null) return null;
+
+                return Arc.Create(center, radiusFeet, 0, 2 * Math.PI, x, y);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return null;
+            }
+        }
+
+        private void ApplyLeaderEndMarkerGraphics(View view, ElementId id)
+        {
+            try
+            {
+                if (view == null) return;
+                if (id == null || id == ElementId.InvalidElementId) return;
+
+                var ogs = new OverrideGraphicSettings();
+                ogs.SetProjectionLineColor(new Color(0, 200, 255));
+                view.SetElementOverrides(id, ogs);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+            }
         }
 
         private string BuildPointedBendingDetailLine(ShimizRevitAddin2026.Model.RebarTagLeaderBendingDetailCheckItem item)

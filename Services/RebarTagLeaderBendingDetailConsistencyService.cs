@@ -32,6 +32,46 @@ namespace ShimizRevitAddin2026.Services
                 : new List<RebarTagLeaderBendingDetailCheckItem> { item };
         }
 
+        public (bool ok, XYZ endPoint, string reason) TryGetLeaderEndPoint(
+            Document doc,
+            Rebar rebar,
+            View view)
+        {
+            try
+            {
+                if (doc == null) return (false, null, "Document が null です。");
+                if (rebar == null) return (false, null, "Rebar が null です。");
+                if (view == null) return (false, null, "View が null です。");
+
+                var stage = "Init";
+
+                stage = "CollectStructureRebarTagIds";
+                var tagIds = CollectStructureRebarTagIds(doc, rebar, view);
+                if (tagIds == null || tagIds.Count == 0)
+                    return (false, null, BuildStageMessage(stage, "構造鉄筋タグがありません。"));
+
+                stage = "ResolveIndependentTags";
+                var tags = ResolveIndependentTags(doc, tagIds);
+                if (tags == null || tags.Count == 0)
+                    return (false, null, BuildStageMessage(stage, "構造鉄筋タグ要素を取得できません。"));
+
+                stage = "TrySelectFreeEndTagWithLeaderPoints";
+                var (freeTag, segStart, segEnd, selectReason) = TrySelectFreeEndTagWithLeaderPoints(tags, view);
+                if (freeTag == null)
+                    return (false, null, BuildStageMessage(stage, selectReason));
+
+                if (segEnd == null)
+                    return (false, null, BuildStageMessage(stage, "LeaderEnd を取得できません。"));
+
+                return (true, segEnd, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// ビュー内の全鉄筋をグループ②③④に分類して返す。
         /// ① はExecutionService側で IsNoTagOrBendingDetail として判定する。
@@ -218,6 +258,29 @@ namespace ShimizRevitAddin2026.Services
                 }
 
                 // -----------------------------------------------------------------
+                // 指先（矢印先端）近傍の鉄筋を優先（BoundingBox交差の誤検知を回避）
+                // -----------------------------------------------------------------
+                stage = "TryFindNearestRebarByLeaderEnd";
+                var (hasNear, nearRebar, nearPoint, nearReason) =
+                    TryFindNearestRebarByLeaderPoint(allRebarsInView, view, rayOrigin, 150.0 / 304.8); // 150mm
+                if (hasNear && nearRebar != null)
+                {
+                    var isMatch = nearRebar.Id == taggedRebarId;
+                    return new RebarTagLeaderBendingDetailCheckItem(
+                        freeTag.Id,
+                        taggedRebarId,
+                        nearPoint ?? rayOrigin,
+                        ElementId.InvalidElementId,
+                        ElementId.InvalidElementId,
+                        isMatch,
+                        isMatch
+                            ? "鉄筋モデル直接一致。"
+                            : $"鉄筋モデル直接不一致（指先={nearRebar.Id.Value} / タグ対象={taggedRebarId.Value}）。",
+                        isLeaderPointingRebarDirectly: true,
+                        pointedDirectRebarId: nearRebar.Id);
+                }
+
+                // -----------------------------------------------------------------
                 // 距離比較：鉄筋モデル直接 vs 曲げ詳細
                 // -----------------------------------------------------------------
                 stage = "TryFindFirstIntersectionWithBendingDetail";
@@ -321,6 +384,212 @@ namespace ShimizRevitAddin2026.Services
             if (parts.Count == 0)
                 return "引き出し線の先に曲げ詳細も鉄筋モデルも見つかりません。";
             return string.Join(" / ", parts);
+        }
+
+        private (bool ok, Rebar rebar, XYZ hitPoint, string reason)
+            TryFindNearestRebarByLeaderPoint(
+                IReadOnlyList<Rebar> rebars,
+                View view,
+                XYZ leaderEndPoint,
+                double searchRadiusFeet)
+        {
+            try
+            {
+                if (rebars == null || rebars.Count == 0) return (false, null, null, "ビュー内に鉄筋が見つかりません。");
+                if (view == null) return (false, null, null, "View が null です。");
+                if (leaderEndPoint == null) return (false, null, null, "指先点が無効です。");
+                if (searchRadiusFeet <= Eps) return (false, null, null, "探索半径が無効です。");
+
+                var (hasBasis, right, up, basisReason) = TryGetViewBasis(view);
+                if (!hasBasis) return (false, null, null, string.IsNullOrWhiteSpace(basisReason) ? "ビュー座標系を取得できません。" : basisReason);
+
+                var (okP, u0, v0) = TryProjectToUv(leaderEndPoint, right, up);
+                if (!okP) return (false, null, null, "指先点の投影に失敗しました。");
+
+                var radius2 = searchRadiusFeet * searchRadiusFeet;
+                Rebar best = null;
+                XYZ bestPoint = null;
+                var bestD2 = double.MaxValue;
+
+                foreach (var rebar in rebars)
+                {
+                    if (rebar == null) continue;
+                    var (ok, d2, hp, _) = TryDistanceSquaredToRebarCenterline2D(rebar, view, leaderEndPoint, u0, v0, right, up);
+                    if (!ok) continue;
+                    if (d2 > radius2) continue;
+
+                    if (d2 < bestD2)
+                    {
+                        bestD2 = d2;
+                        best = rebar;
+                        bestPoint = hp;
+                    }
+                }
+
+                if (best == null) return (false, null, null, "指先近傍の鉄筋を特定できません。");
+                return (true, best, bestPoint, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private (bool ok, double dist2, XYZ hitPoint, string reason)
+            TryDistanceSquaredToRebarCenterline2D(
+                Rebar rebar,
+                View view,
+                XYZ point,
+                double u0,
+                double v0,
+                XYZ right,
+                XYZ up)
+        {
+            try
+            {
+                if (rebar == null || view == null || point == null || right == null || up == null)
+                    return (false, 0, null, "入力が無効です。");
+
+                var curves = TryGetRebarCenterlineCurvesOrEmpty(rebar);
+                if (curves.Count == 0)
+                {
+                    // 中心線が取れない場合は BoundingBox にフォールバック
+                    return TryDistanceSquaredToBoundingBox2D(rebar, view, u0, v0, right, up);
+                }
+
+                var bestD2 = double.MaxValue;
+                XYZ bestPoint = null;
+
+                foreach (var c in curves)
+                {
+                    if (c == null) continue;
+                    var (ok, d2, hp) = TryDistanceSquaredToCurve2D(c, point, u0, v0, right, up);
+                    if (!ok) continue;
+                    if (d2 < bestD2)
+                    {
+                        bestD2 = d2;
+                        bestPoint = hp;
+                    }
+                }
+
+                if (bestPoint == null) return (false, 0, null, "中心線投影に失敗しました。");
+                return (true, bestD2, bestPoint, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, 0, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private IReadOnlyList<Curve> TryGetRebarCenterlineCurvesOrEmpty(Rebar rebar)
+        {
+            try
+            {
+                if (rebar == null) return new List<Curve>();
+
+                // MultiplanarOption は環境差があるため、例外時は空で返す
+                return rebar.GetCenterlineCurves(false, false, false, MultiplanarOption.IncludeOnlyPlanarCurves, 0)
+                    ?.Where(x => x != null)
+                    .ToList()
+                    ?? new List<Curve>();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return new List<Curve>();
+            }
+        }
+
+        private (bool ok, double dist2, XYZ hitPoint)
+            TryDistanceSquaredToCurve2D(
+                Curve curve,
+                XYZ point,
+                double u0,
+                double v0,
+                XYZ right,
+                XYZ up)
+        {
+            try
+            {
+                if (curve == null || point == null || right == null || up == null) return (false, 0, null);
+
+                IntersectionResult prj;
+                try { prj = curve.Project(point); }
+                catch (Exception) { return (false, 0, null); }
+                if (prj == null || prj.XYZPoint == null) return (false, 0, null);
+
+                var hp = prj.XYZPoint;
+                var (okH, uh, vh) = TryProjectToUv(hp, right, up);
+                if (!okH) return (false, 0, null);
+
+                var du = u0 - uh;
+                var dv = v0 - vh;
+                var d2 = (du * du) + (dv * dv);
+                return (true, d2, hp);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, 0, null);
+            }
+        }
+
+        private (bool ok, double dist2, XYZ hitPoint, string reason)
+            TryDistanceSquaredToBoundingBox2D(
+                Element element,
+                View view,
+                double u0,
+                double v0,
+                XYZ right,
+                XYZ up)
+        {
+            try
+            {
+                if (element == null) return (false, 0, null, "Element が null です。");
+
+                var (hasBb, bb, bbReason) = TryGetBoundingBoxPreferView(element, view);
+                if (!hasBb || bb == null || bb.Min == null || bb.Max == null)
+                    return (false, 0, null, string.IsNullOrWhiteSpace(bbReason) ? "BoundingBox を取得できません。" : bbReason);
+
+                var corners = BuildBoundingBoxCorners(bb.Min, bb.Max);
+                var uMin = double.MaxValue; var uMax = double.MinValue;
+                var vMin = double.MaxValue; var vMax = double.MinValue;
+
+                foreach (var c in corners)
+                {
+                    var (ok, u, v) = TryProjectToUv(c, right, up);
+                    if (!ok) continue;
+                    if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+                    if (v < vMin) vMin = v; if (v > vMax) vMax = v;
+                }
+
+                if (uMin > uMax || vMin > vMax)
+                    return (false, 0, null, "2D BoundingBox を構築できません。");
+
+                var du = 0.0;
+                if (u0 < uMin) du = uMin - u0;
+                else if (u0 > uMax) du = u0 - uMax;
+
+                var dv = 0.0;
+                if (v0 < vMin) dv = vMin - v0;
+                else if (v0 > vMax) dv = v0 - vMax;
+
+                var d2 = (du * du) + (dv * dv);
+
+                // 近似最近点（矩形へのクランプ）を返す
+                var uHit = u0 < uMin ? uMin : (u0 > uMax ? uMax : u0);
+                var vHit = v0 < vMin ? vMin : (v0 > vMax ? vMax : v0);
+                var hitPoint = (right * uHit) + (up * vHit);
+
+                return (true, d2, hitPoint, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, 0, null, $"{ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         // -------------------------------------------------------------------------
