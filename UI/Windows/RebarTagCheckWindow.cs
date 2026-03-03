@@ -33,8 +33,9 @@ namespace ShimizRevitAddin2026.UI.Windows
         private System.Windows.Controls.Button _executeButton;
         private System.Windows.Controls.Button _resetButton;
 
-        private ListBox _structureTagNotFoundListBox;
-        private ListBox _bendingDetailNotFoundListBox;
+        private ListBox _structureTagOnlyNotFoundListBox;
+        private ListBox _bendingDetailOnlyNotFoundListBox;
+        private ListBox _bothTagAndBendingDetailNotFoundListBox;
         private ListBox _group2ListBox;
         private ListBox _group3ListBox;
         private ListBox _group4ListBox;
@@ -482,7 +483,7 @@ namespace ShimizRevitAddin2026.UI.Windows
 
         private UIElement CreateNoTagOrBendingDetailExpander()
         {
-            // ① は2タブ構成のため、Expanderで一括折りたたみを行う
+            // ① は複数タブ構成のため、Expanderで一括折りたたみを行う
             var expander = new Expander
             {
                 IsExpanded = true,
@@ -508,22 +509,30 @@ namespace ShimizRevitAddin2026.UI.Windows
                 Margin = new Thickness(0)
             };
 
-            var (structureTab, structureListBox) = CreateRebarListTabItem(
-                "構造タグ無し",
-                nameof(RebarTagCheckViewModel.StructureTagNotFoundCountText),
-                nameof(RebarTagCheckViewModel.StructureTagNotFoundRebars),
+            var (structureOnlyTab, structureOnlyListBox) = CreateRebarListTabItem(
+                "タグ無し",
+                nameof(RebarTagCheckViewModel.StructureTagOnlyNotFoundCountText),
+                nameof(RebarTagCheckViewModel.StructureTagOnlyNotFoundRebars),
                 BuildFixedColorListItemStyle(Brushes.Blue, System.Windows.Media.Color.FromRgb(227, 242, 253)));
-            _structureTagNotFoundListBox = structureListBox;
+            _structureTagOnlyNotFoundListBox = structureOnlyListBox;
 
-            var (bendingTab, bendingListBox) = CreateRebarListTabItem(
+            var (bendingOnlyTab, bendingOnlyListBox) = CreateRebarListTabItem(
                 "曲げ詳細無し",
-                nameof(RebarTagCheckViewModel.BendingDetailNotFoundCountText),
-                nameof(RebarTagCheckViewModel.BendingDetailNotFoundRebars),
+                nameof(RebarTagCheckViewModel.BendingDetailOnlyNotFoundCountText),
+                nameof(RebarTagCheckViewModel.BendingDetailOnlyNotFoundRebars),
                 BuildFixedColorListItemStyle(Brushes.DarkGreen, System.Windows.Media.Color.FromRgb(232, 245, 233)));
-            _bendingDetailNotFoundListBox = bendingListBox;
+            _bendingDetailOnlyNotFoundListBox = bendingOnlyListBox;
 
-            tabs.Items.Add(structureTab);
-            tabs.Items.Add(bendingTab);
+            var (bothTab, bothListBox) = CreateRebarListTabItem(
+                "両方無し",
+                nameof(RebarTagCheckViewModel.BothTagAndBendingDetailNotFoundCountText),
+                nameof(RebarTagCheckViewModel.BothTagAndBendingDetailNotFoundRebars),
+                BuildFixedColorListItemStyle(Brushes.Purple, System.Windows.Media.Color.FromRgb(243, 229, 245)));
+            _bothTagAndBendingDetailNotFoundListBox = bothListBox;
+
+            tabs.Items.Add(structureOnlyTab);
+            tabs.Items.Add(bendingOnlyTab);
+            tabs.Items.Add(bothTab);
 
             return tabs;
         }
@@ -973,8 +982,9 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             try
             {
-                if (_structureTagNotFoundListBox != null) _structureTagNotFoundListBox.SelectedItem = null;
-                if (_bendingDetailNotFoundListBox != null) _bendingDetailNotFoundListBox.SelectedItem = null;
+                if (_structureTagOnlyNotFoundListBox != null) _structureTagOnlyNotFoundListBox.SelectedItem = null;
+                if (_bendingDetailOnlyNotFoundListBox != null) _bendingDetailOnlyNotFoundListBox.SelectedItem = null;
+                if (_bothTagAndBendingDetailNotFoundListBox != null) _bothTagAndBendingDetailNotFoundListBox.SelectedItem = null;
                 if (_group2ListBox != null) _group2ListBox.SelectedItem = null;
                 if (_group3ListBox != null) _group3ListBox.SelectedItem = null;
                 if (_group4ListBox != null) _group4ListBox.SelectedItem = null;
@@ -1067,8 +1077,9 @@ namespace ShimizRevitAddin2026.UI.Windows
             // 別のリストで選択が残ると混乱するため、選択元以外は解除する
             try
             {
-                if (!ReferenceEquals(sender, _structureTagNotFoundListBox) && _structureTagNotFoundListBox != null) _structureTagNotFoundListBox.SelectedItem = null;
-                if (!ReferenceEquals(sender, _bendingDetailNotFoundListBox) && _bendingDetailNotFoundListBox != null) _bendingDetailNotFoundListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _structureTagOnlyNotFoundListBox) && _structureTagOnlyNotFoundListBox != null) _structureTagOnlyNotFoundListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _bendingDetailOnlyNotFoundListBox) && _bendingDetailOnlyNotFoundListBox != null) _bendingDetailOnlyNotFoundListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _bothTagAndBendingDetailNotFoundListBox) && _bothTagAndBendingDetailNotFoundListBox != null) _bothTagAndBendingDetailNotFoundListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _group2ListBox) && _group2ListBox != null) _group2ListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _group3ListBox) && _group3ListBox != null) _group3ListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _group4ListBox) && _group4ListBox != null) _group4ListBox.SelectedItem = null;

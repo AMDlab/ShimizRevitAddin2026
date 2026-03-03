@@ -11,11 +11,14 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 {
     internal class RebarTagCheckViewModel : INotifyPropertyChanged
     {
-        // ①-1 構造タグ無し
-        public ObservableCollection<RebarListItem> StructureTagNotFoundRebars { get; } = new ObservableCollection<RebarListItem>();
+        // ①-1 タグ無し（構造タグのみ無し）
+        public ObservableCollection<RebarListItem> StructureTagOnlyNotFoundRebars { get; } = new ObservableCollection<RebarListItem>();
 
-        // ①-2 曲げ詳細無し
-        public ObservableCollection<RebarListItem> BendingDetailNotFoundRebars { get; } = new ObservableCollection<RebarListItem>();
+        // ①-2 曲げ詳細無し（曲げ詳細のみ無し）
+        public ObservableCollection<RebarListItem> BendingDetailOnlyNotFoundRebars { get; } = new ObservableCollection<RebarListItem>();
+
+        // ①-3 両方無し（構造タグと曲げ詳細が両方無し）
+        public ObservableCollection<RebarListItem> BothTagAndBendingDetailNotFoundRebars { get; } = new ObservableCollection<RebarListItem>();
 
         // ② 自由な端点のタグがホストされてない
         public ObservableCollection<RebarListItem> Group2Rebars { get; } = new ObservableCollection<RebarListItem>();
@@ -70,18 +73,25 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             private set { if (_rebarCountText == value) return; _rebarCountText = value ?? string.Empty; OnPropertyChanged(); }
         }
 
-        private string _structureTagNotFoundCountText = "0";
-        public string StructureTagNotFoundCountText
+        private string _structureTagOnlyNotFoundCountText = "0";
+        public string StructureTagOnlyNotFoundCountText
         {
-            get => _structureTagNotFoundCountText;
-            private set { if (_structureTagNotFoundCountText == value) return; _structureTagNotFoundCountText = value ?? "0"; OnPropertyChanged(); }
+            get => _structureTagOnlyNotFoundCountText;
+            private set { if (_structureTagOnlyNotFoundCountText == value) return; _structureTagOnlyNotFoundCountText = value ?? "0"; OnPropertyChanged(); }
         }
 
-        private string _bendingDetailNotFoundCountText = "0";
-        public string BendingDetailNotFoundCountText
+        private string _bendingDetailOnlyNotFoundCountText = "0";
+        public string BendingDetailOnlyNotFoundCountText
         {
-            get => _bendingDetailNotFoundCountText;
-            private set { if (_bendingDetailNotFoundCountText == value) return; _bendingDetailNotFoundCountText = value ?? "0"; OnPropertyChanged(); }
+            get => _bendingDetailOnlyNotFoundCountText;
+            private set { if (_bendingDetailOnlyNotFoundCountText == value) return; _bendingDetailOnlyNotFoundCountText = value ?? "0"; OnPropertyChanged(); }
+        }
+
+        private string _bothTagAndBendingDetailNotFoundCountText = "0";
+        public string BothTagAndBendingDetailNotFoundCountText
+        {
+            get => _bothTagAndBendingDetailNotFoundCountText;
+            private set { if (_bothTagAndBendingDetailNotFoundCountText == value) return; _bothTagAndBendingDetailNotFoundCountText = value ?? "0"; OnPropertyChanged(); }
         }
 
         private string _group2CountText = "0";
@@ -210,7 +220,7 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             if (item == null) return int.MaxValue;
 
             // ③/④ は「一致」をリスト末尾に回す（不一致→一致の順）
-            if (item.IsStructureTagNotFound || item.IsBendingDetailNotFound) return 10;
+            if (IsMissingStructureTagOrBendingDetail(item)) return 10;
             if (item.IsFreeEndTagNotFound) return 20;
 
             if (item.IsLeaderPointingRebar)
@@ -224,8 +234,9 @@ namespace ShimizRevitAddin2026.UI.ViewModels
 
         private void ClearRebarGroups()
         {
-            StructureTagNotFoundRebars.Clear();
-            BendingDetailNotFoundRebars.Clear();
+            StructureTagOnlyNotFoundRebars.Clear();
+            BendingDetailOnlyNotFoundRebars.Clear();
+            BothTagAndBendingDetailNotFoundRebars.Clear();
             Group2Rebars.Clear();
             Group3Rebars.Clear();
             Group4Rebars.Clear();
@@ -236,10 +247,9 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             if (item == null) return;
 
             // ① 構造タグ無し / 曲げ詳細無し（②③④の前提条件のため最優先で分岐する）
-            if (item.IsStructureTagNotFound || item.IsBendingDetailNotFound)
+            if (IsMissingStructureTagOrBendingDetail(item))
             {
-                if (item.IsStructureTagNotFound) StructureTagNotFoundRebars.Add(item);
-                if (item.IsBendingDetailNotFound) BendingDetailNotFoundRebars.Add(item);
+                AddToGroup1(item);
                 return;
             }
 
@@ -261,10 +271,39 @@ namespace ShimizRevitAddin2026.UI.ViewModels
             Group4Rebars.Add(item);
         }
 
+        private bool IsMissingStructureTagOrBendingDetail(RebarListItem item)
+        {
+            if (item == null) return false;
+            return item.IsStructureTagNotFound || item.IsBendingDetailNotFound;
+        }
+
+        private void AddToGroup1(RebarListItem item)
+        {
+            if (item == null) return;
+
+            var hasNoStructureTag = item.IsStructureTagNotFound;
+            var hasNoBendingDetail = item.IsBendingDetailNotFound;
+
+            if (hasNoStructureTag && hasNoBendingDetail)
+            {
+                BothTagAndBendingDetailNotFoundRebars.Add(item);
+                return;
+            }
+
+            if (hasNoStructureTag)
+            {
+                StructureTagOnlyNotFoundRebars.Add(item);
+                return;
+            }
+
+            BendingDetailOnlyNotFoundRebars.Add(item);
+        }
+
         private void UpdateGroupCounts()
         {
-            StructureTagNotFoundCountText = StructureTagNotFoundRebars.Count.ToString();
-            BendingDetailNotFoundCountText = BendingDetailNotFoundRebars.Count.ToString();
+            StructureTagOnlyNotFoundCountText = StructureTagOnlyNotFoundRebars.Count.ToString();
+            BendingDetailOnlyNotFoundCountText = BendingDetailOnlyNotFoundRebars.Count.ToString();
+            BothTagAndBendingDetailNotFoundCountText = BothTagAndBendingDetailNotFoundRebars.Count.ToString();
             Group2CountText = Group2Rebars.Count.ToString();
             Group3CountText = Group3Rebars.Count.ToString();
             Group4CountText = Group4Rebars.Count.ToString();
