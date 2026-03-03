@@ -262,7 +262,7 @@ namespace ShimizRevitAddin2026.Services
                 // -----------------------------------------------------------------
                 stage = "TryFindNearestRebarByLeaderEnd";
                 var (hasNear, nearRebar, nearPoint, nearReason) =
-                    TryFindNearestRebarByLeaderPoint(allRebarsInView, view, rayOrigin, 150.0 / 304.8); // 150mm
+                    TryFindNearestRebarByLeaderPoint(allRebarsInView, view, rayOrigin, 100.0 / 304.8); // 100mm
                 if (hasNear && nearRebar != null)
                 {
                     var isMatch = nearRebar.Id == taggedRebarId;
