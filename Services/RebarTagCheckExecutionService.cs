@@ -175,7 +175,11 @@ namespace ShimizRevitAddin2026.Services
             if (rebar == null)
                 return new RebarListItem(ElementId.InvalidElementId, ElementId.InvalidElementId, string.Empty);
 
-            var isNoTagOrBendingDetail = IsNoTagOrBendingDetail(activeView, rebar, hostRebarIdsWithBendingDetail);
+            var hasStructureTag = HasStructureRebarTag(activeView, rebar);
+            var hasBendingDetail = HasBendingDetail(hostRebarIdsWithBendingDetail, rebar.Id);
+            var isStructureTagNotFound = !hasStructureTag;
+            var isBendingDetailNotFound = !hasBendingDetail;
+            var isNoTagOrBendingDetail = isStructureTagNotFound || isBendingDetailNotFound;
             var isFreeEndTagNotFound = IsInCollection(group2Ids, rebar.Id);
             var isLeaderPointingRebarMismatch = IsInCollection(group3MismatchIds, rebar.Id);
             var isLeaderPointingRebar = isLeaderPointingRebarMismatch || IsInCollection(group3MatchIds, rebar.Id);
@@ -186,27 +190,14 @@ namespace ShimizRevitAddin2026.Services
                 rebar.Id,
                 activeView?.Id ?? ElementId.InvalidElementId,
                 BuildDisplayText(displayPrefix, rebar),
+                isStructureTagNotFound,
+                isBendingDetailNotFound,
                 isNoTagOrBendingDetail,
                 isFreeEndTagNotFound,
                 isLeaderPointingRebar,
                 isLeaderPointingRebarMismatch,
                 isLeaderPointingBendingDetail,
                 isLeaderPointingBendingDetailMismatch);
-        }
-
-        /// <summary>① タグまたは曲げの詳細がホストされてない（鉄筋モデルに曲げ詳細・タグが存在しない）</summary>
-        private bool IsNoTagOrBendingDetail(
-            View activeView,
-            Rebar rebar,
-            IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail)
-        {
-            if (rebar == null || rebar.Id == null || rebar.Id == ElementId.InvalidElementId)
-                return false;
-
-            var hasStructureTag = HasStructureRebarTag(activeView, rebar);
-            if (hasStructureTag) return false;
-
-            return !HasBendingDetail(hostRebarIdsWithBendingDetail, rebar.Id);
         }
 
         private bool HasBendingDetail(IReadOnlyCollection<ElementId> hostRebarIdsWithBendingDetail, ElementId rebarId)

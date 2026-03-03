@@ -33,7 +33,8 @@ namespace ShimizRevitAddin2026.UI.Windows
         private System.Windows.Controls.Button _executeButton;
         private System.Windows.Controls.Button _resetButton;
 
-        private ListBox _group1ListBox;
+        private ListBox _structureTagNotFoundListBox;
+        private ListBox _bendingDetailNotFoundListBox;
         private ListBox _group2ListBox;
         private ListBox _group3ListBox;
         private ListBox _group4ListBox;
@@ -448,14 +449,8 @@ namespace ShimizRevitAddin2026.UI.Windows
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            // ① タグまたは曲げの詳細がホストされてない
-            panel.Children.Add(CreateRebarExpander(
-                "①タグまたは曲げ詳細なし",
-                nameof(RebarTagCheckViewModel.Group1CountText),
-                out _group1ListBox,
-                nameof(RebarTagCheckViewModel.Group1Rebars),
-                Brushes.Blue,
-                System.Windows.Media.Color.FromRgb(227, 242, 253)));
+            // ① 構造タグ無し / 曲げ詳細無し
+            panel.Children.Add(CreateNoTagOrBendingDetailTabPanel());
 
             // ② 自由な端点のタグがホストされてない
             panel.Children.Add(CreateRebarExpander(
@@ -483,6 +478,88 @@ namespace ShimizRevitAddin2026.UI.Windows
                 BuildGroup4ListItemStyle()));
 
             return panel;
+        }
+
+        private UIElement CreateNoTagOrBendingDetailTabPanel()
+        {
+            var tabs = new System.Windows.Controls.TabControl
+            {
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var (structureTab, structureListBox) = CreateRebarListTabItem(
+                "構造タグ無し",
+                nameof(RebarTagCheckViewModel.StructureTagNotFoundCountText),
+                nameof(RebarTagCheckViewModel.StructureTagNotFoundRebars),
+                BuildFixedColorListItemStyle(Brushes.Blue, System.Windows.Media.Color.FromRgb(227, 242, 253)));
+            _structureTagNotFoundListBox = structureListBox;
+
+            var (bendingTab, bendingListBox) = CreateRebarListTabItem(
+                "曲げ詳細無し",
+                nameof(RebarTagCheckViewModel.BendingDetailNotFoundCountText),
+                nameof(RebarTagCheckViewModel.BendingDetailNotFoundRebars),
+                BuildFixedColorListItemStyle(Brushes.DarkGreen, System.Windows.Media.Color.FromRgb(232, 245, 233)));
+            _bendingDetailNotFoundListBox = bendingListBox;
+
+            tabs.Items.Add(structureTab);
+            tabs.Items.Add(bendingTab);
+
+            return tabs;
+        }
+
+        private (System.Windows.Controls.TabItem tabItem, ListBox listBox) CreateRebarListTabItem(
+            string titleText,
+            string countBindingName,
+            string itemsBindingName,
+            Style itemStyle)
+        {
+            var tab = new System.Windows.Controls.TabItem
+            {
+                Header = BuildHeaderWithCount(titleText, countBindingName)
+            };
+
+            var listBox = new ListBox
+            {
+                MinHeight = 120,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch
+            };
+
+            listBox.ItemContainerStyle = itemStyle;
+            ScrollViewer.SetVerticalScrollBarVisibility(listBox, ScrollBarVisibility.Auto);
+            ScrollViewer.SetHorizontalScrollBarVisibility(listBox, ScrollBarVisibility.Disabled);
+            listBox.SetBinding(ItemsControl.ItemsSourceProperty, new System.Windows.Data.Binding(itemsBindingName));
+            listBox.SelectionChanged += OnRebarSelectionChanged;
+
+            tab.Content = listBox;
+            return (tab, listBox);
+        }
+
+        private UIElement BuildHeaderWithCount(string titleText, string countBindingName)
+        {
+            var header = new DockPanel { LastChildFill = true };
+
+            var title = new System.Windows.Controls.TextBlock
+            {
+                Text = titleText,
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            DockPanel.SetDock(title, Dock.Left);
+
+            var count = new System.Windows.Controls.TextBlock
+            {
+                FontSize = 13,
+                Foreground = Brushes.Gray,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+            count.SetBinding(System.Windows.Controls.TextBlock.TextProperty, new System.Windows.Data.Binding(countBindingName));
+
+            header.Children.Add(title);
+            header.Children.Add(count);
+            return header;
         }
 
         private UIElement CreateRebarExpander(
@@ -875,7 +952,8 @@ namespace ShimizRevitAddin2026.UI.Windows
         {
             try
             {
-                if (_group1ListBox != null) _group1ListBox.SelectedItem = null;
+                if (_structureTagNotFoundListBox != null) _structureTagNotFoundListBox.SelectedItem = null;
+                if (_bendingDetailNotFoundListBox != null) _bendingDetailNotFoundListBox.SelectedItem = null;
                 if (_group2ListBox != null) _group2ListBox.SelectedItem = null;
                 if (_group3ListBox != null) _group3ListBox.SelectedItem = null;
                 if (_group4ListBox != null) _group4ListBox.SelectedItem = null;
@@ -968,7 +1046,8 @@ namespace ShimizRevitAddin2026.UI.Windows
             // 別のリストで選択が残ると混乱するため、選択元以外は解除する
             try
             {
-                if (!ReferenceEquals(sender, _group1ListBox) && _group1ListBox != null) _group1ListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _structureTagNotFoundListBox) && _structureTagNotFoundListBox != null) _structureTagNotFoundListBox.SelectedItem = null;
+                if (!ReferenceEquals(sender, _bendingDetailNotFoundListBox) && _bendingDetailNotFoundListBox != null) _bendingDetailNotFoundListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _group2ListBox) && _group2ListBox != null) _group2ListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _group3ListBox) && _group3ListBox != null) _group3ListBox.SelectedItem = null;
                 if (!ReferenceEquals(sender, _group4ListBox) && _group4ListBox != null) _group4ListBox.SelectedItem = null;
