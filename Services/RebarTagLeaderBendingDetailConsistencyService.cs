@@ -260,35 +260,57 @@ namespace ShimizRevitAddin2026.Services
                 // -----------------------------------------------------------------
                 // 先に「円内が何か」で分岐：曲げ詳細ならグループ④、鉄筋ならグループ③。いずれも「本体が円内にいるか」で一致=黒/不一致=赤。
                 // -----------------------------------------------------------------
-                const double circleRadiusFeet = 100.0 / 304.8; // 100mm
+                const double circleRadiusFeet = 150.0 / 304.8; // 150mm
 
-                // 1) 指先（円）を含む曲げ詳細があるか → グループ④
-                stage = "TryFindBendingDetailContainingLeaderEnd";
-                var (hasBendingAtPoint, bendingDetailAtPoint, _) = TryFindBendingDetailContainingPoint(bendingDetails, view, rayOrigin);
-                if (hasBendingAtPoint && bendingDetailAtPoint != null)
+                // 1) 指先の円（150mm）内に曲げ詳細があるか → グループ④（半径で判定し、bbox 外の指先も拾う）
+                stage = "TryGetBendingDetailsWithinRadius";
+                var (okBendingCircle, detailsInCircle, _) = TryGetBendingDetailsWithinRadius(
+                    bendingDetails, view, rayOrigin, circleRadiusFeet);
+                if (okBendingCircle && detailsInCircle != null && detailsInCircle.Count > 0)
                 {
                     stage = "TryResolveHostRebarIdFromBendingDetail";
-                    var (hasHost, hostRebarId) = TryResolveHostRebarIdFromBendingDetail(doc, bendingDetailAtPoint);
-                    if (!hasHost)
+                    Element chosenDetail = null;
+                    ElementId hostRebarId = null;
+                    foreach (var d in detailsInCircle)
                     {
+                        if (d == null) continue;
+                        var (hasHost, hid) = TryResolveHostRebarIdFromBendingDetail(doc, d);
+                        if (!hasHost) continue;
+                        if (hid == taggedRebarId)
+                        {
+                            chosenDetail = d;
+                            hostRebarId = hid;
+                            break;
+                        }
+                        if (chosenDetail == null) { chosenDetail = d; hostRebarId = hid; }
+                    }
+                    if (chosenDetail != null && hostRebarId != null)
+                    {
+                        var isMatch = hostRebarId == taggedRebarId;
                         return new RebarTagLeaderBendingDetailCheckItem(
                             freeTag.Id,
                             taggedRebarId,
                             rayOrigin,
-                            bendingDetailAtPoint.Id,
-                            ElementId.InvalidElementId,
-                            false,
-                            BuildStageMessage(stage, "曲げ詳細から鉄筋を特定できません。"));
+                            chosenDetail.Id,
+                            hostRebarId,
+                            isMatch,
+                            isMatch ? "一致。" : "指先の円内の曲げ詳細のホストがタグ対象の鉄筋と一致しません。");
                     }
-                    var isMatch = hostRebarId == taggedRebarId;
-                    return new RebarTagLeaderBendingDetailCheckItem(
-                        freeTag.Id,
-                        taggedRebarId,
-                        rayOrigin,
-                        bendingDetailAtPoint.Id,
-                        hostRebarId,
-                        isMatch,
-                        isMatch ? "一致。" : "指先の円内の曲げ詳細のホストがタグ対象の鉄筋と一致しません。");
+                    var firstDetail = detailsInCircle.FirstOrDefault(e => e != null);
+                    if (firstDetail != null)
+                    {
+                        var (hasHost, hid) = TryResolveHostRebarIdFromBendingDetail(doc, firstDetail);
+                        return new RebarTagLeaderBendingDetailCheckItem(
+                            freeTag.Id,
+                            taggedRebarId,
+                            rayOrigin,
+                            firstDetail.Id,
+                            hasHost ? hid : ElementId.InvalidElementId,
+                            false,
+                            hasHost
+                                ? "指先の円内の曲げ詳細のホストがタグ対象の鉄筋と一致しません。"
+                                : BuildStageMessage(stage, "曲げ詳細から鉄筋を特定できません。"));
+                    }
                 }
 
                 // 2) 円内に鉄筋があるか → グループ③
@@ -634,50 +656,40 @@ namespace ShimizRevitAddin2026.Services
         // 指先（円）を含む曲げ詳細を優先、無ければレイ交差
         // -------------------------------------------------------------------------
 
-        private (bool ok, Element bendingDetail, XYZ hitPoint, double t, string reason)
-            TryFindBendingDetailAtLeaderEndOrFirstIntersection(
-                IReadOnlyList<Element> bendingDetails,
-                View view,
-                XYZ rayOrigin,
-                XYZ rayDir)
-        {
-            var (hasContain, containDetail, containReason) = TryFindBendingDetailContainingPoint(bendingDetails, view, rayOrigin);
-            if (hasContain && containDetail != null)
-                return (true, containDetail, rayOrigin, 0.0, string.Empty);
-            return (false, null, null, 0, containReason ?? "指先を含む曲げ詳細がありません。");
-        }
-
         /// <summary>
-        /// 指先（円）の位置を 2D で含む曲げ詳細を返す。複数ある場合は中心が最も近いものを採用。
+        /// 指先から指定半径内にある曲げ詳細を返す。2D で BoundingBox と指先の距離が半径以下なら「円内」とする。
         /// </summary>
-        private (bool ok, Element bendingDetail, string reason)
-            TryFindBendingDetailContainingPoint(
+        private (bool ok, IReadOnlyList<Element> detailsInCircle, string reason)
+            TryGetBendingDetailsWithinRadius(
                 IReadOnlyList<Element> bendingDetails,
                 View view,
-                XYZ point)
+                XYZ leaderEndPoint,
+                double searchRadiusFeet)
         {
             try
             {
                 if (bendingDetails == null || bendingDetails.Count == 0)
-                    return (false, null, "曲げ詳細がありません。");
-                if (view == null || point == null)
-                    return (false, null, "View または点が無効です。");
+                    return (false, new List<Element>(), "曲げ詳細がありません。");
+                if (view == null || leaderEndPoint == null)
+                    return (false, new List<Element>(), "View または指先が無効です。");
+                if (searchRadiusFeet <= Eps)
+                    return (false, new List<Element>(), "探索半径が無効です。");
 
                 var (hasBasis, right, up, basisReason) = TryGetViewBasis(view);
                 if (!hasBasis)
-                    return (false, null, basisReason ?? "ビュー座標系を取得できません。");
+                    return (false, new List<Element>(), basisReason ?? "ビュー座標系を取得できません。");
 
-                var (okP, uo, vo) = TryProjectToUv(point, right, up);
+                var (okP, u0, v0) = TryProjectToUv(leaderEndPoint, right, up);
                 if (!okP)
-                    return (false, null, "指先の投影に失敗しました。");
+                    return (false, new List<Element>(), "指先の投影に失敗しました。");
 
-                Element best = null;
-                var bestDist2 = double.MaxValue;
+                var radius2 = searchRadiusFeet * searchRadiusFeet;
+                var list = new List<Element>();
 
                 foreach (var e in bendingDetails)
                 {
                     if (e == null) continue;
-                    var (hasBb, bb, bbReason) = TryGetBoundingBoxPreferView(e, view);
+                    var (hasBb, bb, _) = TryGetBoundingBoxPreferView(e, view);
                     if (!hasBb || bb == null || bb.Min == null || bb.Max == null) continue;
 
                     var corners = BuildBoundingBoxCorners(bb.Min, bb.Max);
@@ -692,26 +704,30 @@ namespace ShimizRevitAddin2026.Services
                     }
                     if (uMin > uMax || vMin > vMax) continue;
 
-                    if (uo < uMin || uo > uMax || vo < vMin || vo > vMax)
-                        continue;
-
-                    var uc = (uMin + uMax) * 0.5;
-                    var vc = (vMin + vMax) * 0.5;
-                    var d2 = (uo - uc) * (uo - uc) + (vo - vc) * (vo - vc);
-                    if (d2 < bestDist2)
-                    {
-                        bestDist2 = d2;
-                        best = e;
-                    }
+                    var d2 = DistanceSquared2DPointToRect(u0, v0, uMin, uMax, vMin, vMax);
+                    if (d2 <= radius2)
+                        list.Add(e);
                 }
 
-                return best != null ? (true, best, string.Empty) : (false, null, "指先を含む曲げ詳細がありません。");
+                return (true, list, string.Empty);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, null, $"{ex.GetType().Name}: {ex.Message}");
+                return (false, new List<Element>(), $"{ex.GetType().Name}: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 2D 点 (px, py) から矩形 [xMin,xMax]×[yMin,yMax] までの距離の二乗。内部なら 0。
+        /// </summary>
+        private static double DistanceSquared2DPointToRect(double px, double py, double xMin, double xMax, double yMin, double yMax)
+        {
+            var cx = Math.Max(xMin, Math.Min(px, xMax));
+            var cy = Math.Max(yMin, Math.Min(py, yMax));
+            var dx = px - cx;
+            var dy = py - cy;
+            return dx * dx + dy * dy;
         }
 
         // -------------------------------------------------------------------------
