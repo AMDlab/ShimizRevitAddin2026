@@ -56,9 +56,9 @@ namespace ShimizRevitAddin2026.ExternalEvents
                 }
 
                 var items = GetConsistencyItemsOrEmpty(doc, rebar, view);
-                var extraIds = BuildExtraHighlightIds(items);
 
-                var model = _highlighter.Highlight(uidoc, rebar, view, extraIds);
+                // 高亮は「選んだ鉄筋」と「その鉄筋に紐づくタグ・曲げ詳細」のみとする（指先の鉄筋/曲げ詳細は含めない）
+                var model = _highlighter.Highlight(uidoc, rebar, view, new List<ElementId>());
                 var message = FormatMessage(items);
                 var result = BuildResult(doc, model, message);
 

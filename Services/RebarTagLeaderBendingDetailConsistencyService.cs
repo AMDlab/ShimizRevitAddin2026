@@ -282,10 +282,11 @@ namespace ShimizRevitAddin2026.Services
 
                 // -----------------------------------------------------------------
                 // 距離比較：鉄筋モデル直接 vs 曲げ詳細
+                // 指先（円）を含む曲げ詳細を優先し、無い場合のみレイの先端交差を使う
                 // -----------------------------------------------------------------
-                stage = "TryFindFirstIntersectionWithBendingDetail";
+                stage = "TryFindBendingDetailContainingLeaderEnd";
                 var (hasBendingHit, hitDetail, hitBendingPoint, tBending, bendingReason) =
-                    TryFindFirstIntersectionWithBendingDetail(bendingDetails, view, rayOrigin, rayDir);
+                    TryFindBendingDetailAtLeaderEndOrFirstIntersection(bendingDetails, view, rayOrigin, rayDir);
 
                 stage = "TryFindFirstIntersectionWithRebar";
                 var (hasRebarHit, hitRebar, hitRebarPoint, tRebar, rebarReason) =
@@ -669,6 +670,90 @@ namespace ShimizRevitAddin2026.Services
             {
                 Debug.WriteLine(ex);
                 return (false, null, null, 0, $"TryFindFirstIntersectionWithRebar: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // 指先（円）を含む曲げ詳細を優先、無ければレイ交差
+        // -------------------------------------------------------------------------
+
+        private (bool ok, Element bendingDetail, XYZ hitPoint, double t, string reason)
+            TryFindBendingDetailAtLeaderEndOrFirstIntersection(
+                IReadOnlyList<Element> bendingDetails,
+                View view,
+                XYZ rayOrigin,
+                XYZ rayDir)
+        {
+            var (hasContain, containDetail, containReason) = TryFindBendingDetailContainingPoint(bendingDetails, view, rayOrigin);
+            if (hasContain && containDetail != null)
+                return (true, containDetail, rayOrigin, 0.0, string.Empty);
+            return TryFindFirstIntersectionWithBendingDetail(bendingDetails, view, rayOrigin, rayDir);
+        }
+
+        /// <summary>
+        /// 指先（円）の位置を 2D で含む曲げ詳細を返す。複数ある場合は中心が最も近いものを採用。
+        /// </summary>
+        private (bool ok, Element bendingDetail, string reason)
+            TryFindBendingDetailContainingPoint(
+                IReadOnlyList<Element> bendingDetails,
+                View view,
+                XYZ point)
+        {
+            try
+            {
+                if (bendingDetails == null || bendingDetails.Count == 0)
+                    return (false, null, "曲げ詳細がありません。");
+                if (view == null || point == null)
+                    return (false, null, "View または点が無効です。");
+
+                var (hasBasis, right, up, basisReason) = TryGetViewBasis(view);
+                if (!hasBasis)
+                    return (false, null, basisReason ?? "ビュー座標系を取得できません。");
+
+                var (okP, uo, vo) = TryProjectToUv(point, right, up);
+                if (!okP)
+                    return (false, null, "指先の投影に失敗しました。");
+
+                Element best = null;
+                var bestDist2 = double.MaxValue;
+
+                foreach (var e in bendingDetails)
+                {
+                    if (e == null) continue;
+                    var (hasBb, bb, bbReason) = TryGetBoundingBoxPreferView(e, view);
+                    if (!hasBb || bb == null || bb.Min == null || bb.Max == null) continue;
+
+                    var corners = BuildBoundingBoxCorners(bb.Min, bb.Max);
+                    var uMin = double.MaxValue; var uMax = double.MinValue;
+                    var vMin = double.MaxValue; var vMax = double.MinValue;
+                    foreach (var c in corners)
+                    {
+                        var (ok, u, v) = TryProjectToUv(c, right, up);
+                        if (!ok) continue;
+                        if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+                        if (v < vMin) vMin = v; if (v > vMax) vMax = v;
+                    }
+                    if (uMin > uMax || vMin > vMax) continue;
+
+                    if (uo < uMin || uo > uMax || vo < vMin || vo > vMax)
+                        continue;
+
+                    var uc = (uMin + uMax) * 0.5;
+                    var vc = (vMin + vMax) * 0.5;
+                    var d2 = (uo - uc) * (uo - uc) + (vo - vc) * (vo - vc);
+                    if (d2 < bestDist2)
+                    {
+                        bestDist2 = d2;
+                        best = e;
+                    }
+                }
+
+                return best != null ? (true, best, string.Empty) : (false, null, "指先を含む曲げ詳細がありません。");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex);
+                return (false, null, $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
