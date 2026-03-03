@@ -687,7 +687,7 @@ namespace ShimizRevitAddin2026.Services
             var (hasContain, containDetail, containReason) = TryFindBendingDetailContainingPoint(bendingDetails, view, rayOrigin);
             if (hasContain && containDetail != null)
                 return (true, containDetail, rayOrigin, 0.0, string.Empty);
-            return TryFindFirstIntersectionWithBendingDetail(bendingDetails, view, rayOrigin, rayDir);
+            return (false, null, null, 0, containReason ?? "指先を含む曲げ詳細がありません。");
         }
 
         /// <summary>
@@ -754,88 +754,6 @@ namespace ShimizRevitAddin2026.Services
             {
                 Debug.WriteLine(ex);
                 return (false, null, $"{ex.GetType().Name}: {ex.Message}");
-            }
-        }
-
-        // -------------------------------------------------------------------------
-        // bending detail intersection (t を追加)
-        // -------------------------------------------------------------------------
-
-        private (bool ok, Element bendingDetail, XYZ hitPoint, double t, string reason)
-            TryFindFirstIntersectionWithBendingDetail(
-                IReadOnlyList<Element> bendingDetails,
-                View view,
-                XYZ rayOrigin,
-                XYZ rayDir)
-        {
-            try
-            {
-                if (bendingDetails == null || bendingDetails.Count == 0)
-                    return (false, null, null, 0, "曲げ詳細が見つかりません。");
-
-                var (hasBasis, right, up, basisReason) = TryGetViewBasis(view);
-                if (!hasBasis)
-                    return (false, null, null, 0, string.IsNullOrWhiteSpace(basisReason) ? "ビュー座標系を取得できません。" : basisReason);
-
-                if (rayOrigin == null || rayDir == null)
-                    return (false, null, null, 0, "レイが無効です。");
-
-                var (okO, uo, vo) = TryProjectToUv(rayOrigin, right, up);
-                var (okD, du, dv) = TryProjectDirToUv(rayDir, right, up);
-                if (!okO || !okD)
-                    return (false, null, null, 0, "レイの投影に失敗しました。");
-
-                Element best = null;
-                XYZ bestPoint = null;
-                var bestT = double.MaxValue;
-                var errors = new List<string>();
-
-                foreach (var e in bendingDetails)
-                {
-                    try
-                    {
-                        var (ok, t, reason) = TryIntersectRayWithBoundingBox2D(e, view, uo, vo, du, dv, right, up);
-                        if (!ok)
-                        {
-                            if (!string.IsNullOrWhiteSpace(reason) && e != null)
-                                errors.Add($"{e.Id.Value}: {reason}");
-                            continue;
-                        }
-
-                        if (t < bestT)
-                        {
-                            bestT = t;
-                            best = e;
-                            bestPoint = rayOrigin + (rayDir * t);
-                        }
-                    }
-                    catch (Autodesk.Revit.Exceptions.InternalException iex)
-                    {
-                        if (e != null) errors.Add($"{e.Id.Value}: InternalException: {iex.Message}");
-                        else errors.Add($"InternalException: {iex.Message}");
-                    }
-                    catch (Exception ex)
-                    {
-                        if (e != null) errors.Add($"{e.Id.Value}: {ex.GetType().Name}: {ex.Message}");
-                        else errors.Add($"{ex.GetType().Name}: {ex.Message}");
-                    }
-                }
-
-                if (best == null)
-                {
-                    if (errors.Count == 0)
-                        return (false, null, null, 0, "引き出し線の延長と曲げ詳細の交点を取得できません。");
-
-                    var unique = errors.Distinct().Take(8).ToList();
-                    return (false, null, null, 0, "曲げ詳細との交点取得で例外が発生しました。\n" + string.Join("\n", unique));
-                }
-
-                return (true, best, bestPoint, bestT, string.Empty);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex);
-                return (false, null, null, 0, $"TryFindFirstIntersectionWithBendingDetail: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
