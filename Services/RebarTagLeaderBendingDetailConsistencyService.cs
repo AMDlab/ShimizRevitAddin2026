@@ -258,64 +258,101 @@ namespace ShimizRevitAddin2026.Services
                 }
 
                 // -----------------------------------------------------------------
-                // 先に「円内が何か」で分岐：曲げ詳細ならグループ④、鉄筋ならグループ③。いずれも「本体が円内にいるか」で一致=黒/不一致=赤。
+                // 指先（矢印先端）近傍の鉄筋を優先（BoundingBox交差の誤検知を回避）
                 // -----------------------------------------------------------------
-                const double circleRadiusFeet = 100.0 / 304.8; // 100mm
-
-                // 1) 指先（円）を含む曲げ詳細があるか → グループ④
-                stage = "TryFindBendingDetailContainingLeaderEnd";
-                var (hasBendingAtPoint, bendingDetailAtPoint, _) = TryFindBendingDetailContainingPoint(bendingDetails, view, rayOrigin);
-                if (hasBendingAtPoint && bendingDetailAtPoint != null)
+                stage = "TryFindNearestRebarByLeaderEnd";
+                var (hasNear, nearRebar, nearPoint, nearReason) =
+                    TryFindNearestRebarByLeaderPoint(allRebarsInView, view, rayOrigin, 100.0 / 304.8); // 100mm
+                if (hasNear && nearRebar != null)
                 {
-                    stage = "TryResolveHostRebarIdFromBendingDetail";
-                    var (hasHost, hostRebarId) = TryResolveHostRebarIdFromBendingDetail(doc, bendingDetailAtPoint);
-                    if (!hasHost)
-                    {
-                        return new RebarTagLeaderBendingDetailCheckItem(
-                            freeTag.Id,
-                            taggedRebarId,
-                            rayOrigin,
-                            bendingDetailAtPoint.Id,
-                            ElementId.InvalidElementId,
-                            false,
-                            BuildStageMessage(stage, "曲げ詳細から鉄筋を特定できません。"));
-                    }
-                    var isMatch = hostRebarId == taggedRebarId;
+                    var isMatch = nearRebar.Id == taggedRebarId;
                     return new RebarTagLeaderBendingDetailCheckItem(
                         freeTag.Id,
                         taggedRebarId,
-                        rayOrigin,
-                        bendingDetailAtPoint.Id,
-                        hostRebarId,
-                        isMatch,
-                        isMatch ? "一致。" : "指先の円内の曲げ詳細のホストがタグ対象の鉄筋と一致しません。");
-                }
-
-                // 2) 円内に鉄筋があるか → グループ③
-                stage = "TryGetRebarIdsInCircle";
-                var (okCircle, idsInCircle, circleReason) = TryGetRebarIdsWithinRadius(
-                    allRebarsInView, view, rayOrigin, circleRadiusFeet);
-                if (okCircle && idsInCircle != null && idsInCircle.Count > 0)
-                {
-                    var taggedInCircle = idsInCircle.Any(id => id != null && id != ElementId.InvalidElementId && id.Value == taggedRebarId.Value);
-                    var isMatch = taggedInCircle;
-                    return new RebarTagLeaderBendingDetailCheckItem(
-                        freeTag.Id,
-                        taggedRebarId,
-                        rayOrigin,
+                        nearPoint ?? rayOrigin,
                         ElementId.InvalidElementId,
                         ElementId.InvalidElementId,
                         isMatch,
                         isMatch
                             ? "鉄筋モデル直接一致。"
-                            : "指先の円内にタグ対象の鉄筋がありません。",
+                            : $"鉄筋モデル直接不一致（指先={nearRebar.Id.Value} / タグ対象={taggedRebarId.Value}）。",
                         isLeaderPointingRebarDirectly: true,
-                        pointedDirectRebarId: isMatch ? taggedRebarId : ElementId.InvalidElementId);
+                        pointedDirectRebarId: nearRebar.Id);
                 }
 
-                // 3) 円内に曲げ詳細も鉄筋もない → グループ②
+                // -----------------------------------------------------------------
+                // 距離比較：鉄筋モデル直接 vs 曲げ詳細
+                // 指先（円）を含む曲げ詳細を優先し、無い場合のみレイの先端交差を使う
+                // -----------------------------------------------------------------
+                stage = "TryFindBendingDetailContainingLeaderEnd";
+                var (hasBendingHit, hitDetail, hitBendingPoint, tBending, bendingReason) =
+                    TryFindBendingDetailAtLeaderEndOrFirstIntersection(bendingDetails, view, rayOrigin, rayDir);
+
+                stage = "TryFindFirstIntersectionWithRebar";
+                var (hasRebarHit, hitRebar, hitRebarPoint, tRebar, rebarReason) =
+                    TryFindFirstIntersectionWithRebar(allRebarsInView, view, rayOrigin, rayDir);
+
+                // グループ③：鉄筋の方が近い（または曲げ詳細がない）
+                if (hasRebarHit && (!hasBendingHit || tRebar <= tBending))
+                {
+                    var isMatch = hitRebar.Id == taggedRebarId;
+                    return new RebarTagLeaderBendingDetailCheckItem(
+                        freeTag.Id,
+                        taggedRebarId,
+                        hitRebarPoint,
+                        ElementId.InvalidElementId,
+                        ElementId.InvalidElementId,
+                        isMatch,
+                        isMatch
+                            ? "鉄筋モデル直接一致。"
+                            : $"鉄筋モデル直接不一致（指先={hitRebar.Id.Value} / タグ対象={taggedRebarId.Value}）。",
+                        isLeaderPointingRebarDirectly: true,
+                        pointedDirectRebarId: hitRebar.Id);
+                }
+
+                // グループ④：曲げ詳細の方が近い（または鉄筋がない）
+                if (hasBendingHit && hitDetail != null)
+                {
+                    stage = "TryResolveHostRebarIdFromBendingDetail";
+                    var (hasHost, hostRebarId) = TryResolveHostRebarIdFromBendingDetail(doc, hitDetail);
+                    if (!hasHost)
+                    {
+                        return new RebarTagLeaderBendingDetailCheckItem(
+                            freeTag.Id,
+                            taggedRebarId,
+                            hitBendingPoint,
+                            hitDetail.Id,
+                            ElementId.InvalidElementId,
+                            false,
+                            BuildStageMessage(stage, "曲げ詳細から鉄筋を特定できません。"));
+                    }
+
+                    if (hostRebarId == taggedRebarId)
+                    {
+                        return new RebarTagLeaderBendingDetailCheckItem(
+                            freeTag.Id,
+                            taggedRebarId,
+                            hitBendingPoint,
+                            hitDetail.Id,
+                            hostRebarId,
+                            true,
+                            "一致。");
+                    }
+
+                    return new RebarTagLeaderBendingDetailCheckItem(
+                        freeTag.Id,
+                        taggedRebarId,
+                        hitBendingPoint,
+                        hitDetail.Id,
+                        hostRebarId,
+                        false,
+                        $"不一致（曲げ詳細Host={hostRebarId.Value} / タグ対象鉄筋={taggedRebarId.Value}）。");
+                }
+
+                // グループ②：どちらも見つからない
+                var noHitReason = BuildNoHitReason(hasBendingHit, bendingReason, hasRebarHit, rebarReason);
                 return CreateFail(freeTag.Id, taggedRebarId, segEnd,
-                    "指先の円内に曲げ詳細も鉄筋もありません。");
+                    BuildStageMessage("TryFindIntersection", noHitReason));
             }
             catch (Autodesk.Revit.Exceptions.InternalException iex)
             {
@@ -350,11 +387,8 @@ namespace ShimizRevitAddin2026.Services
             return string.Join(" / ", parts);
         }
 
-        /// <summary>
-        /// 指先（円）から指定半径内にある鉄筋の ElementId を返す。距離の近い遠いは問わず、円内かどうかのみで判定する。
-        /// </summary>
-        private (bool ok, IReadOnlyList<ElementId> rebarIds, string reason)
-            TryGetRebarIdsWithinRadius(
+        private (bool ok, Rebar rebar, XYZ hitPoint, string reason)
+            TryFindNearestRebarByLeaderPoint(
                 IReadOnlyList<Rebar> rebars,
                 View view,
                 XYZ leaderEndPoint,
@@ -362,35 +396,44 @@ namespace ShimizRevitAddin2026.Services
         {
             try
             {
-                if (rebars == null || rebars.Count == 0) return (false, new List<ElementId>(), "ビュー内に鉄筋が見つかりません。");
-                if (view == null) return (false, new List<ElementId>(), "View が null です。");
-                if (leaderEndPoint == null) return (false, new List<ElementId>(), "指先点が無効です。");
-                if (searchRadiusFeet <= Eps) return (false, new List<ElementId>(), "探索半径が無効です。");
+                if (rebars == null || rebars.Count == 0) return (false, null, null, "ビュー内に鉄筋が見つかりません。");
+                if (view == null) return (false, null, null, "View が null です。");
+                if (leaderEndPoint == null) return (false, null, null, "指先点が無効です。");
+                if (searchRadiusFeet <= Eps) return (false, null, null, "探索半径が無効です。");
 
                 var (hasBasis, right, up, basisReason) = TryGetViewBasis(view);
-                if (!hasBasis) return (false, new List<ElementId>(), basisReason ?? "ビュー座標系を取得できません。");
+                if (!hasBasis) return (false, null, null, string.IsNullOrWhiteSpace(basisReason) ? "ビュー座標系を取得できません。" : basisReason);
 
                 var (okP, u0, v0) = TryProjectToUv(leaderEndPoint, right, up);
-                if (!okP) return (false, new List<ElementId>(), "指先点の投影に失敗しました。");
+                if (!okP) return (false, null, null, "指先点の投影に失敗しました。");
 
                 var radius2 = searchRadiusFeet * searchRadiusFeet;
-                var idsInCircle = new List<ElementId>();
+                Rebar best = null;
+                XYZ bestPoint = null;
+                var bestD2 = double.MaxValue;
 
                 foreach (var rebar in rebars)
                 {
-                    if (rebar == null || rebar.Id == null || rebar.Id == ElementId.InvalidElementId) continue;
+                    if (rebar == null) continue;
                     var (ok, d2, hp, _) = TryDistanceSquaredToRebarCenterline2D(rebar, view, leaderEndPoint, u0, v0, right, up);
                     if (!ok) continue;
                     if (d2 > radius2) continue;
-                    idsInCircle.Add(rebar.Id);
+
+                    if (d2 < bestD2)
+                    {
+                        bestD2 = d2;
+                        best = rebar;
+                        bestPoint = hp;
+                    }
                 }
 
-                return (true, idsInCircle, string.Empty);
+                if (best == null) return (false, null, null, "指先近傍の鉄筋を特定できません。");
+                return (true, best, bestPoint, string.Empty);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(ex);
-                return (false, new List<ElementId>(), $"{ex.GetType().Name}: {ex.Message}");
+                return (false, null, null, $"{ex.GetType().Name}: {ex.Message}");
             }
         }
 
