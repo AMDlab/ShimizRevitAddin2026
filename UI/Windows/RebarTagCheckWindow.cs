@@ -450,7 +450,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             };
 
             // ① 構造タグ無し / 曲げ詳細無し
-            panel.Children.Add(CreateNoTagOrBendingDetailTabPanel());
+            panel.Children.Add(CreateNoTagOrBendingDetailExpander());
 
             // ② 自由な端点のタグがホストされてない
             panel.Children.Add(CreateRebarExpander(
@@ -480,11 +480,32 @@ namespace ShimizRevitAddin2026.UI.Windows
             return panel;
         }
 
+        private UIElement CreateNoTagOrBendingDetailExpander()
+        {
+            // ① は2タブ構成のため、Expanderで一括折りたたみを行う
+            var expander = new Expander
+            {
+                IsExpanded = true,
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            expander.Header = new System.Windows.Controls.TextBlock
+            {
+                Text = "①構造タグ無し / 曲げ詳細無し",
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            expander.Content = CreateNoTagOrBendingDetailTabPanel();
+            return expander;
+        }
+
         private UIElement CreateNoTagOrBendingDetailTabPanel()
         {
             var tabs = new System.Windows.Controls.TabControl
             {
-                Margin = new Thickness(0, 0, 0, 6)
+                Margin = new Thickness(0)
             };
 
             var (structureTab, structureListBox) = CreateRebarListTabItem(
