@@ -450,29 +450,29 @@ namespace ShimizRevitAddin2026.UI.Windows
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            // ① 構造タグ無し / 曲げ詳細無し
+            // ① タグ・曲げの詳細がホストされてない
             panel.Children.Add(CreateNoTagOrBendingDetailExpander());
 
             // ② 自由な端点のタグがホストされてない
             panel.Children.Add(CreateRebarExpander(
-                "②自由端タグなし",
+                "②自由な端点のタグがホストされてない",
                 nameof(RebarTagCheckViewModel.Group2CountText),
                 out _group2ListBox,
                 nameof(RebarTagCheckViewModel.Group2Rebars),
                 Brushes.DarkGoldenrod,
                 System.Windows.Media.Color.FromRgb(255, 249, 196)));
 
-            // ③ 自由な端点のタグが鉄筋モデルを指している（赤=HOST不一致）
+            // ③ 鉄筋モデルが自由な端点の先にある
             panel.Children.Add(CreateRebarExpander(
-                "③鉄筋モデルを指している",
+                "③鉄筋モデルが自由な端点の先にある",
                 nameof(RebarTagCheckViewModel.Group3CountText),
                 out _group3ListBox,
                 nameof(RebarTagCheckViewModel.Group3Rebars),
                 BuildGroup3ListItemStyle()));
 
-            // ④ 自由な端点の先にある曲げの詳細を指している（赤=HOST不一致）
+            // ④ 曲げの詳細が自由な端点の先にある
             panel.Children.Add(CreateRebarExpander(
-                "④曲げ詳細を指している",
+                "④曲げの詳細が自由な端点の先にある",
                 nameof(RebarTagCheckViewModel.Group4CountText),
                 out _group4ListBox,
                 nameof(RebarTagCheckViewModel.Group4Rebars),
@@ -492,7 +492,7 @@ namespace ShimizRevitAddin2026.UI.Windows
 
             expander.Header = new System.Windows.Controls.TextBlock
             {
-                Text = "①構造タグ無し / 曲げ詳細無し",
+                Text = "①タグ・曲げの詳細がホストされてない",
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center
@@ -510,7 +510,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             };
 
             var (structureOnlyTab, structureOnlyListBox) = CreateRebarListTabItem(
-                "タグ無し",
+                "構造タグ無し",
                 nameof(RebarTagCheckViewModel.StructureTagOnlyNotFoundCountText),
                 nameof(RebarTagCheckViewModel.StructureTagOnlyNotFoundRebars),
                 BuildFixedColorListItemStyle(Brushes.Blue, System.Windows.Media.Color.FromRgb(227, 242, 253)));
@@ -665,7 +665,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             return style;
         }
 
-        // ③ 自由な端点のタグが鉄筋モデルを指している
+        // ③ 鉄筋モデルが自由な端点の先にある
         // IsLeaderPointingRebarMismatch=true の場合は赤、それ以外は黒
         private Style BuildGroup3ListItemStyle()
         {
@@ -686,7 +686,7 @@ namespace ShimizRevitAddin2026.UI.Windows
             return style;
         }
 
-        // ④ 自由な端点の先にある曲げの詳細を指している
+        // ④ 曲げの詳細が自由な端点の先にある
         // IsLeaderPointingBendingDetailMismatch=true の場合は赤、それ以外は黒
         private Style BuildGroup4ListItemStyle()
         {
