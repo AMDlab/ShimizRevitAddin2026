@@ -27,6 +27,7 @@ namespace ShimizRevitAddin2026.UI.Ribbon
 
             var panel = CreateOrGetPanel(application, tabName, "鉄筋");
             AddRebarCheckButton(panel);
+            AddTagSelectedRebarButton(panel);
         }
 
         private void CreateTabIfNeeded(UIControlledApplication application, string tabName)
@@ -93,6 +94,45 @@ namespace ShimizRevitAddin2026.UI.Ribbon
         {
             button.ToolTip = "鉄筋タグ（曲げ加工詳細）を照査して一覧表示します。";
             button.LongDescription = "アクティブビュー内の鉄筋を集計し、タグの不整合（引出線・曲げ加工詳細）を確認します。";
+
+            button.Image = _iconFactory.CreateIcon16();
+            button.LargeImage = _iconFactory.CreateIcon32();
+        }
+
+        private void AddTagSelectedRebarButton(RibbonPanel panel)
+        {
+            if (panel == null)
+            {
+                return;
+            }
+
+            var data = BuildTagSelectedRebarButtonData();
+            var created = panel.AddItem(data) as PushButton;
+            if (created == null)
+            {
+                return;
+            }
+
+            ConfigureTagSelectedRebarButton(created);
+        }
+
+        private PushButtonData BuildTagSelectedRebarButtonData()
+        {
+            var assemblyPath = Assembly.GetExecutingAssembly().Location;
+            var commandType = typeof(TagSelectedRebarCommand);
+            var commandFullName = commandType.FullName ?? commandType.Name;
+
+            return new PushButtonData(
+                "Shimiz.TagSelectedRebar",
+                "選択鉄筋にタグ",
+                assemblyPath,
+                commandFullName);
+        }
+
+        private void ConfigureTagSelectedRebarButton(PushButton button)
+        {
+            button.ToolTip = "ビュー内の鉄筋を複数選択し、Tag rebar_2（標準）で端部にタグを付けます。";
+            button.LongDescription = "鉄筋のみ選択可能な状態で複数選択し、端部に構造タグを付与します。";
 
             button.Image = _iconFactory.CreateIcon16();
             button.LargeImage = _iconFactory.CreateIcon32();

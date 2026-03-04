@@ -69,6 +69,7 @@
   <ItemGroup>
     <Compile Include="Commands\HighlightRebarTagsInActiveViewCommand.cs" />
     <Compile Include="Commands\OpenRebarTagCheckWindowCommand.cs" />
+    <Compile Include="Commands\TagSelectedRebarCommand.cs" />
     <Compile Include="ExternalEvents\RebarTagCheckExecuteExternalEventHandler.cs" />
     <Compile Include="ExternalEvents\RebarTagCheckExecuteExternalEventService.cs" />
     <Compile Include="ExternalEvents\RebarTagHighlightExternalEventHandler.cs" />
@@ -79,6 +80,7 @@
     <Compile Include="Selection\RebarSelectionFilter.cs" />
     <Compile Include="Services\RebarCollectorInView.cs" />
     <Compile Include="Services\RebarDependentTagCollector.cs" />
+    <Compile Include="Services\RebarTagBySelectionService.cs" />
     <Compile Include="Services\RebarTagCheckExecutionService.cs" />
     <Compile Include="Services\RebarTagLeaderBendingDetailConsistencyService.cs" />
     <Compile Include="Services\RebarTagHighlighter.cs" />
